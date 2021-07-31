@@ -5,7 +5,6 @@ from scipy.ndimage import gaussian_filter
 from scipy.interpolate import interp1d
 import scipy.io
 import h5py
-import hdf5storage
 from tqdm import trange
 
 def loadData(path_to_data):

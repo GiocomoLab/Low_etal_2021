@@ -1,11 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
+
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import interp1d
 from scipy.stats import sem
 import scipy.io
-from tqdm import trange
+from scipy.spatial import distance
 
+from tqdm import trange
 
 def tuning_curve(x, Y, dt, b, smooth=True, l=2, SEM=False):
     '''
@@ -87,3 +89,108 @@ def get_coordinates(tip, entry, distances):
     coords = tip[None, :] + (distances[:, None]/l) * probe_vec[None, :]
     
     return(coords)
+
+
+def similarity(Y):
+    '''
+    Compute the trial-trial similarity. Compare the position-binned 
+    spatial coding across all neurons for each pair of trials.
+
+    Params:
+    ------
+    Y : ndarray
+        normalized firing rates for each cell, position, trial
+        shape (n_trials, n_pos_bins, n_cells)
+
+    Returns:
+    -------
+    sim : ndarray
+        trial-trial matrix of correlations, 0-1
+        shape (n_trials, n_trials)
+
+
+    '''
+    Y_unwrapped = np.reshape(Y, (Y.shape[0], -1))
+    sim_vec = np.abs(distance.pdist(Y_unwrapped, 'correlation')-1)
+    sim = distance.squareform(sim_vec)
+
+    return sim
+
+
+def get_remap_idx(W, MIN_TRIALS=5):
+    '''
+    Get the index for each trial preceding a remap event
+
+    Params:
+    ------
+    W : ndarray
+        k-means model output, map ID for each trial
+        shape (n_trials, n_maps)
+    MIN_TRIALS : int, odd
+        minimum number of trials that activity must reside in a map before the next remap event
+        prevents over-counting if activity bounces back and forth before settling
+    '''
+    trials = np.arange(0, W.shape[0]-1)
+    near_N = MIN_TRIALS//2
+
+    # find all remaps
+    remap_idx = np.where(np.abs(np.diff(W[:, 0])))[0]
+
+    # find stable periods meeting trial min
+    for i in range(near_N):
+        if i == 0:
+            near_remaps = np.append(remap_idx, remap_idx+(i+1))
+        elif i < near_N:
+            near_remaps = np.append(np.append(near_remaps, remap_idx-i), remap_idx+(i+1))
+    near_remaps = np.sort(near_remaps)
+    stable_idx = np.setdiff1d(trials, near_remaps)
+
+    # keep only remaps at least 5 trials from last remap
+    boundary_trials = np.insert(remap_idx, 0, 0)
+    remap_idx = np.setdiff1d(remap_idx, remap_idx[np.diff(boundary_trials) < MIN_TRIALS])
+
+    return remap_idx
+
+
+def map_idx_by_obs(A, W):
+    '''
+    Get the k-means map for each observation.
+    Set "map 1" to be the map with slower running speed.
+
+    Params:
+    ------
+    A : ndarray
+        behavioral variables
+    W : ndarray
+        k-means model output, map ID for each trial
+        shape (n_trials, n_maps)
+
+    Returns:
+    -------
+    map1_idx : ndarray
+        k-means map for each observation: 1 = map 1, 0 = map 2
+        shape (n_obs, )
+    map1_slower : int
+        1 if True, 0 if False
+
+    '''
+    # get map indices
+    map_idx = W[:, 0].astype(bool)
+    trials = A[:, 2]
+    map1_idx = np.zeros_like(trials)
+    for i, t in enumerate(np.unique(trials)):
+        if map_idx[i]:
+            map1_idx[trials == t] = 1
+    map1_idx = map1_idx.astype(bool)
+
+    # get running speed in each map and see which is slower
+    speed = A[:, 1]
+    speed_1 = np.nanmean(speed[map1_idx])
+    speed_2 = np.nanmean(speed[~map1_idx])
+    if speed_2 < speed_1: # swap labels
+        map1_idx = ~map1_idx
+        map1_slower = 0
+    else:
+        map1_slower = 1
+
+    return map1_idx, map1_slower
