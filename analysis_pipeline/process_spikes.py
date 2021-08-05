@@ -194,3 +194,153 @@ def map_idx_by_obs(A, W):
         map1_slower = 1
 
     return map1_idx, map1_slower
+
+
+def map_similarity(sim, map_idx):
+    '''
+    calculate the average withing vs. across map similarity
+    count each trial pair once and exclude the diagonal (i.e. autocorrelation) 
+    by indexing into the upper triangle of each within/across maps matrix
+
+    Params:
+    ------
+    sim : ndarray
+        trial-by-trial similarity matrix
+    map_idx : bool
+        True if map 1, False if map 2; shape (n_trials, )
+
+    Returns:
+    -------
+    avg_within : float
+        average within map trial-trial correlation
+    avg_across : float
+        average across map trial-trial correlation
+    '''
+    # get the within map similarity
+    sim_0 = sim[map_idx, :]
+    sim_0 = sim_0[:, map_idx]
+    sim_1 = sim[~map_idx, :]
+    sim_1 = sim_1[:, ~map_idx]
+    within = np.append(sim_0[np.triu_indices(n=sim_0.shape[0], k=1)], 
+                       sim_1[np.triu_indices(n=sim_1.shape[0], k=1)])
+    avg_within = np.mean(within)
+
+    # get the across map similarity
+    sim_across = sim[map_idx, :]
+    sim_across = sim_across[:, ~map_idx]
+    across = sim_across[np.triu_indices(n=sim_across.shape[0], k=1, m=sim_across.shape[1])]
+    avg_across = np.mean(across)
+
+    return avg_within, avg_across
+
+
+'''
+Distance to Cluster:
+functions to calculate the distance to k-means cluster along different axes
+see STAR Methods for more details
+'''
+def clu_distance_population(Y, H, map_idx):
+    '''
+    Calculate the distance between the population activity and 
+    the k-means cluster centroids on each trial
+
+    Params:
+    ------
+    Y : ndarray
+        normalized firing rate by 5cm position bins by trial for each cell
+        shape (n_trials, n_pos_bins, n_cells)
+    H : ndarray
+        k-means tuning curve estimates for each cluster/map
+        shape (n_maps, n_cell*n_pos_bins)
+    map_idx : int
+        index for map 1
+
+    Returns:
+    -------
+    dist : ndarray
+        distance to cluster on each trial; shape (n_trials, )
+        1 = in map 1 centroid
+        -1 = in map 2 centroid
+        0 = exactly between the two maps
+    '''
+    # reshape Y to get a trial x neurons*positions matrix
+    Y = Y.transpose(0, 2, 1)
+    Y_unwrapped = np.reshape(Y, (Y.shape[0], -1))
+    n_trials, n_cells, n_pos = Y.shape
+
+    # get kmeans centroids
+    c1 = H[map_idx]
+    c2 = H[map_idx-1]
+    
+    # project everything down to a vector connecting the two centroids
+    proj = (c1 - c2) / np.linalg.norm(c1 - c2)
+    projc1 = c1 @ proj # cluster 1
+    projc2 = c2 @ proj # cluster 2
+    projY = Y_unwrapped @ proj # activity on each trial
+    
+    # get distance to cluster on each trial
+    dd = (projY - projc2) / (projc1 - projc2)
+    return 2 * (dd - .5) # classify -1 or 1
+
+def clu_distance_cells(Y, H, map_idx, W):
+    '''
+    Calculate the distance to k-means cluster for each cell on each trial.
+    Also computes the log-likelihood that each cell is in each map or the "remap score."
+
+    Params:
+    ------
+    Y : ndarray
+        normalized firing rate by 5cm position bins by trial for each cell
+        shape (n_trials, n_pos_bins, n_cells)
+    H : ndarray
+        k-means tuning curve estimates for each cluster/map
+        shape (n_maps, n_cell*n_pos_bins)
+    map_idx : int
+        index for map 1
+    W : ndarray
+        k-means cluster label for each trial; shape (n_trials, n_maps)
+
+    Returns:
+    -------
+    dd_by_cells : ndarray
+        distance to cluster for each cell on each trial; shape (n_cells, n_trials)
+        1 = in map 1 centroid
+        -1 = in map 2 centroid
+        0 = exactly between the two maps
+    ll_cells : ndarray
+        log likelihood that each cell is in each map; shape (n_cells, n_trials)
+        0 = at the midpoint between clusters
+        1 = in either cluster centroid
+    '''
+    # reshape and get the dimensions 
+    Y = Y.transpose(0, 2, 1)
+    n_trials, n_cells, n_pos = Y.shape
+    n_maps = H.shape[0]
+    H_tens = H.reshape((n_maps, n_cells, n_pos))
+
+    # get each cluster
+    c1 = H_tens[map_idx, :, :]
+    c2 = H_tens[map_idx-1, :, :]
+    
+    # find the unit vector in direction connecting c1 and c2 in state space
+    proj = (c1 - c2) / np.linalg.norm(c1 - c2, axis=1, keepdims=True)
+
+    # project everything onto the same line
+    projc1 = np.sum(c1 * proj, axis=1)[None, :]
+    projc2 = np.sum(c2 * proj, axis=1)[None, :]
+    projY = np.sum(Y * proj[None, :, :], axis=2)
+
+    # distance to cluster for each cell on each trial
+    # assign 1 for in map 1 and -1 for in map 2
+    dd_by_cells = (projY - projc2) / (projc1 - projc2)
+    dd_by_cells = 2 * (dd_by_cells - .5)
+    dd_by_cells = dd_by_cells.T
+    
+    # get the ideal distribution (k-means label for each trial)
+    n_cells = dd_by_cells.shape[0]
+    K = np.tile(W[:, map_idx-1], (n_cells, 1))
+
+    # calculate log likelihood - this is the "remap score"
+    ll_cells = K * np.log(1 + np.exp(dd_by_cells)) + (1 - K) * np.log(1 + np.exp(-dd_by_cells))
+
+    return dd_by_cells, ll_cells

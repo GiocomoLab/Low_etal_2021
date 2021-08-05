@@ -5,8 +5,60 @@ from scipy.ndimage import gaussian_filter
 from scipy.interpolate import interp1d
 import scipy.io
 import h5py
+from pathlib import Path
 from tqdm import trange
 
+
+def open_files(data_folder, mouse, session):
+    '''
+    loads the numpy arrays associated with a given mouse/session ID
+    checks for the MEC_idx file and filters the data as needed
+
+    Params:
+    ------
+    data_folder : string
+        path to the numpy files
+    mouse : string
+        mouse ID
+    session : string
+        session ID
+
+    Returns:
+    -------
+    Y : ndarray
+        normalized firing rate by 5cm position bins by trial for each cell
+        shape (n_trials, n_pos_bins, n_cells)
+    B : ndarray
+        spike count per observation for each cell
+        shape (n_obs, n_cells)
+    A : ndarray
+        behavioral variables by observation - position, speed, trial, time
+        shape (n_obs, 4)
+    cells : ndarray
+        unit ID for each MEC neuron for indexing into B and Y
+    '''
+    Y = np.load(f'{data_folder}{mouse}_{session}_MEC_FRtensor.npy')
+    B = np.load(f'{data_folder}{mouse}_{session}_MEC_spikes.npy')
+    A = np.load(f'{data_folder}{mouse}_{session}_behavior.npy')  
+    
+    # filter sessions where the probe re-exited MEC
+    cells = np.load(f'{data_folder}{mouse}_{session}_MEC_cellIDs.npy')
+    filt_file = f'{data_folder}{mouse}_{session}_MEC_idx.npy'
+    if Path(filt_file).exists():
+        print(f'{mouse}_{session} corrected for mistargeting')
+        cell_idx = np.load(filt_file)
+        cells = cells[cell_idx]
+        Y = Y[:, :, cell_idx]
+        B = B[:, cell_idx]
+
+    return Y, B, A, cells
+    
+
+''' To Load the Raw Data
+Note: you shouldn't need these functions to work with the numpy arrays available on Mendeley.
+They show how those arrays were built from our raw data and could be helpful for converting 
+your own raw data into the format we used for analysis. 
+'''
 def loadData(path_to_data):
     """Loads the neuropixels matlab data struct and extracts relevant variables
 
@@ -163,17 +215,15 @@ def formatData(d, tbin=None, get_vid=True):
                 positions[idx.astype(bool)] += 400
             for b in len(b_vars):
                 if b == 0: # position
-                	X[i, b] = np.mean(positions % 400)
+                    X[i, b] = np.mean(positions % 400)
                 elif b == 3: # trial
-                	continue
+                    continue
                 else:
-                	X[i, b] = np.mean(A[tdx == unique_tdx[i], b])  # time, speed, etc.
+                    X[i, b] = np.mean(A[tdx == unique_tdx[i], b])  # time, speed, etc.
             Y[i, :] = np.sum(B[tdx == unique_tdx[i], :], axis=0)  # spikes
         X[:, 3] = trial_idx(X[:, 0])
 
     return X, X_labels, Y
-
-
 
 """ Helper Functions """
 def nan_interp(y):

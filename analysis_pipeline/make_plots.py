@@ -56,6 +56,7 @@ def plot_fig2b_f(data, mouse, session, cell_IDs, \
                     f, gs, PT_SIZE=0.2):
     '''
     Make panels B-F
+    (note that panel A is produced above as Fig. 1I)
 
     Params:
     ------
@@ -109,6 +110,7 @@ def plot_fig2b_f(data, mouse, session, cell_IDs, \
             ax0.tick_params(labelleft=False)
         if i==1:
             if mouse == 'Seattle':
+                # account for 4 rasters
                 ax0.set_xlabel('position (cm)', fontsize=9, labelpad=1, \
                                horizontalalignment='left', x=0.5)
             else:
