@@ -48,6 +48,29 @@ def draw_raster(cell_IDs, ax, posx, trials, Y, color='k', minimalist=False):
         ax.set_xlim((0, 400))
         ax.set_ylim((0, np.max(trial)))
 
+''' Define plot colors:
+
+Assign colors based on track type
+see: https://personal.sron.nl/~pault/#sec:qualitative Fig. 4
+cue poor : green
+cue rich : rose
+'''
+cp_color = [17/255, 119/255, 51/255, 1]
+cr_color = [204/255, 102/255, 119/255, 1]
+
+colors = [cp_color, cr_color]
+
+'''
+single cell colors for Figure 4
+red, orange, yellow, green, blue, purple
+'''
+cell_colors = np.asarray([[165, 23, 14, 255], [241, 147, 45, 255], [1, 1, 1, 1], 
+                          [78, 178, 101, 255], [82, 137, 199, 255], [153, 79, 136, 255]])/255
+cell_colors = list(cell_colors)
+for i, c in enumerate(cell_colors):
+    cell_colors[i] = tuple(c)
+cell_colors[2] = 'xkcd:gold'
+
 
 ''' FIGURE 1 '''
 
@@ -136,8 +159,267 @@ def plot_fig2b_f(data, mouse, session, cell_IDs, \
     return f, gs
 
 ''' FIGURE 3 '''
+def plot_fig3b(data, mouse='Pisa', session='0430_1'):
+    '''
+    To plot network-wide trail-trial similarity, population distance to 
+    k-means cluster and cell-by-cell distance to cluster.
+    '''
+    # get data
+    d = data[mouse][session]
+    A = d['A']
+    normalized_dd_all = d['dist']
+    sim = d['similarity']
+    dd_by_cell = d['cells_dist']
+
+    # figure params
+    gs = gridspec.GridSpec(20, 1, hspace=1.5)
+    f = plt.figure(figsize=(2.3, 4))
+    c1 = cp_color
+    c2 = 'k'
+
+    # plot distance to cluster
+    ax0 = plt.subplot(gs[11:15])
+    ax0.plot(normalized_dd_all, color=c1, lw=1.5, alpha=1)
+    ax0.set_xlim([0, normalized_dd_all.shape[0]])
+    ax0.set_yticks([-1, 1])
+    ax0.set_ylabel('distance\nscore', fontsize=9, labelpad=1)
+    ax0.tick_params(labelbottom=False, which='major', labelsize=7.5, pad=0.5)
+
+    # plot Euclidean similarity score
+    ax1 = plt.subplot(gs[:11])
+    im = ax1.imshow(sim, clim=[0.1, 0.7], aspect='auto', 
+                    cmap='Greys', interpolation='none')
+    ax1.tick_params(labelbottom=False, which='major', labelsize=7.5, pad=0.5)
+    ax1.set_ylabel('trial number', fontsize=9, labelpad=1)
+    ax1.set_title('network similarity', fontsize=10, pad=3)
+
+    # plot distance to cluster by cells
+    ax2 = plt.subplot(gs[15:])
+    im = ax2.imshow(dd_by_cell, clim=[-1, 1], aspect='auto', 
+                    cmap='binary', interpolation='none')
+    ax2.set_ylim(ax2.get_ylim()[::-1])
+    ax2.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax2.set_xlabel('trial number', fontsize=9, labelpad=1)
+    ax2.set_ylabel('cells', fontsize=9, labelpad=1)
+
+    # set axes
+    ax0.set_xticks([0, 200, 400])
+    ax1.set_yticks([0, 200, 400])
+    ax1.set_xticks([0, 200, 400])
+    ax2.set_xticks([0, 200, 400])
+
+    return f, gs
+
+
+def plot_fig3e(all_within, all_across, N_cue_poor, N_cue_rich):
+    '''
+    within vs. across map similarity for all 2-map sessions
+    '''
+    # set figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.2, 1.4))
+    DOT_SIZE = 20
+    DOT_LW = 1
+    BAR_SIZE = 10
+    BAR_WIDTH = 2.8
+    j = np.random.randn(all_within.shape[0]) * .08
+
+    # plot connector lines
+    for k, w in enumerate(all_within):
+        a = all_across[k]
+        x_vals = [1.08+j[k], 1.92+j[k]]
+        y_vals = [w-0.005, a+0.005]
+        ax.plot(x_vals, y_vals, '-', color='xkcd:gray', lw=DOT_LW, zorder=1,  alpha=1)
+
+    # within map similarity, colored by track type
+    ax.scatter(np.full(N_cue_poor, 1)+j[:N_cue_poor], all_within[:N_cue_poor], \
+               facecolors=cp_color, edgecolors='k', alpha=0.7, \
+               s=DOT_SIZE, lw=DOT_LW, zorder=2, label='poor') 
+    ax.scatter(np.full(N_cue_rich, 1)+j[N_cue_poor:], all_within[N_cue_poor:], \
+               facecolors=cr_color, edgecolors='k', alpha=0.7, \
+               s=DOT_SIZE, lw=DOT_LW, zorder=2, label='rich') 
+
+    # across map similarity, colored by track type
+    ax.scatter(np.full(N_cue_poor, 2)+j[:N_cue_poor], all_across[:N_cue_poor], \
+               facecolors=cp_color, edgecolors='k', alpha=0.7, \
+               s=DOT_SIZE, lw=DOT_LW, zorder=2) 
+    ax.scatter(np.full(N_cue_rich, 2)+j[N_cue_poor:], all_across[N_cue_poor:], \
+               facecolors=cr_color, edgecolors='k', alpha=0.7, \
+               s=DOT_SIZE, lw=DOT_LW, zorder=2) 
+
+    # plot means
+    ax.plot(1, np.mean(all_within), '_', c='k', \
+            markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=3)
+    ax.plot(2, np.mean(all_across), '_', c='k', \
+            markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=3)
+
+    # label axes etc.
+    labels = ['within', 'across']
+    ax.set_xlim([0.5, 2.5])
+    ax.set_xticks([1, 2])
+    ax.set_yticks([0.1, 0.3, 0.5])
+    ax.set_xticklabels(labels, rotation=45)
+    ax.tick_params(which='major', labelsize=8, pad=0.8)
+    ax.set_ylabel('avg. correlation', fontsize=10, labelpad=1)
+    plt.legend(bbox_to_anchor=(1,1,0,0), fontsize=8)
+
+    return f, ax
+
+def plot_fig3f(DV_pcts, ML_pcts, AP_pcts, \
+                DV_loc, ML_loc, AP_loc, \
+                THRESH=1):
+    '''
+    % of all cells that are consistent remappers for different anatomical locations
+    see STAR Methods for more details
+
+    Params:
+    ------
+    DV_pcts, ML_pcts, AP_pcts : ndarray
+        the % of cells that are consistent remappers in each
+        DV, ML, and AP bin (from remapper_locations())
+        shape (n_total_cells, )
+    DV_loc, ML_loc, AP_loc
+        anatomical location of each bin center (from from remapper_locations())
+        shape (n_bins, )
+    THRESH : int
+        maximum average log-likelihood for a cell to be considered a "consistent remapper"
+        default is 1, as in the paper
+    '''
+    gs  = gridspec.GridSpec(1, 3, wspace=0.2)
+    f = plt.figure(figsize=(3, 1.2))
+
+    # plot scores by DV coords:
+    ax0 = plt.subplot(gs[0])
+    ax0.bar(DV_loc, DV_pcts, width=1, color='k')
+    ax0.set_xticks([0, 1000//50])
+    ax0.set_xticklabels([0, 1000])
+    ax0.set_yticks(np.arange(0, 125, 50))
+    ax0.tick_params(which='major', labelsize=7.5, pad=1)
+    ax0.set_title('DV', fontsize=10, pad=1.5)
+    ax0.set_ylabel('% of cells', fontsize=10, labelpad=1)
+
+    # plot scores by ML coords:
+    ax1 = plt.subplot(gs[1])
+    ax1.bar(ML_loc, ML_pcts, width=1, color='k')
+    ax1.set_xticks([0, 250//50, 500//50])
+    ax1.set_xticklabels([-250, 0, 250])
+    ax1.set_yticks(np.arange(0, 125, 50))
+    ax1.tick_params(labelleft=False, which='major', labelsize=7.5, pad=1)
+    ax1.set_title('ML', fontsize=10, pad=1.5)
+    ax1.set_xlabel('distance to reference ($\mu$m)', fontsize=10, labelpad=1)
+
+    # plot scores by AP coords:
+    ax2 = plt.subplot(gs[2])
+    ax2.bar(AP_loc, AP_pcts, width=1, color='k')
+    ax2.set_xticks([200//50, 500//50])
+    ax2.set_xticklabels([200, 500])
+    ax2.set_yticks(np.arange(0, 125, 50))
+    ax2.tick_params(labelleft=False, which='major', labelsize=7.5, pad=1)
+    ax2.set_title('AP', fontsize=10, pad=1.5)
+
+    return f, gs
+
+
 
 ''' FIGURE 4 '''
+''' set example cell colors '''
+# red, orange, green, blue, purple
+cell_colors = np.asarray([[165, 23, 14, 255], [241, 147, 45, 255], [1, 1, 1, 1], 
+                          [78, 178, 101, 255], [82, 137, 199, 255], [153, 79, 136, 255]])/255
+cell_colors = list(cell_colors)
+for i, c in enumerate(cell_colors):
+    cell_colors[i] = tuple(c)
+cell_colors[2] = 'xkcd:gold'
+
+
+def plot_fig4b(dissim, pct_dFR):
+    '''
+    Plot fold-change in firing rate versus spatial dissimilarity across maps
+
+    Params:
+    ------
+    dissim : ndarray
+        1 - cosine similarity across maps; shape (n_cells, )
+    pct_FR : ndarray
+        percent change in peak firing rate; shape (n_cells, )
+    '''
+    # figure params
+    gs = gridspec.GridSpec(6, 6, hspace=0, wspace=0)
+    f = plt.figure(figsize=(3, 3)) 
+    PT_SIZE = 5
+    LW_THRESH = 1.5
+    LW_HIST = 1.5
+
+    # plot it all cells
+    ax0 = plt.subplot(gs[2:, :-2])
+    ax0.scatter(dissim, pct_dFR, color='k', s=PT_SIZE, lw=0, alpha=0.2)
+    ax0.set_xlim(0, 1.05)
+    ymax = ax0.get_ylim()[1] + 25
+    ax0.set_xlabel('spatial dissimilarity', fontsize=10, labelpad=1)
+    ax0.set_ylabel('fold change in\npeak firing rate', fontsize=10, labelpad=1)
+
+    # plot density, spatial
+    ax1 = plt.subplot(gs[:2, :-2])
+    n1, bins1, _ = ax1.hist(dissim, bins=50, density=True, histtype='stepfilled', 
+                          lw=LW_HIST, edgecolor='k', facecolor='xkcd:light gray', alpha=0.7)
+    ax1.set_xlim(0, 1.05)
+    ymax_ax1 = ax1.get_ylim()[1]
+    ax1.tick_params(labelbottom=False, which='major', labelsize=8, pad=0.5)
+    ax1.set_ylabel('% cells', fontsize=10, labelpad=2)
+
+    # plot density, firing rate
+    ax2 = plt.subplot(gs[2:, -2:])
+    n2, bins2, _ = ax2.hist(pct_dFR, bins=50, density=True, histtype='stepfilled', orientation='horizontal', 
+                          lw=LW_HIST, edgecolor='k', facecolor='xkcd:light gray', alpha=0.7)
+    ax2.tick_params(labelleft=False, which='major', labelsize=8, pad=0.5)
+    ax2.set_xlabel('% cells', fontsize=10, labelpad=2)
+    xmax = ax2.get_xlim()[1]
+
+    # plot medians etc
+    ax0.vlines(np.median(dissim), 0, ymax, colors='xkcd:vermillion', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1)
+    ax1.vlines(np.median(dissim), 0, ymax_ax1, colors='xkcd:vermillion', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1)
+    ax0.vlines(np.percentile(dissim, 95), 0, ymax, colors='xkcd:gold', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1)
+    ax1.vlines(np.percentile(dissim, 95), 0, ymax_ax1, colors='xkcd:gold', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1)
+    ax0.hlines(np.median(pct_dFR), 0, 1.05, colors='xkcd:vermillion', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1)
+    ax2.hlines(np.median(pct_dFR), 0, xmax, colors='xkcd:vermillion', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1, label='median')
+    ax0.hlines(np.percentile(pct_dFR, 95), 0, 1.05, colors='xkcd:gold', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1)
+    ax2.hlines(np.percentile(pct_dFR, 95), 0,  xmax, colors='xkcd:gold', lw=LW_THRESH, 
+               linestyles='dashed', alpha=1, label='95$^{th}$ pct')
+
+    # lims and labels
+    ax0.set_xticks([0, 0.5, 1])
+    ax0.set_xticklabels([0, 0.5, 1])
+    ax0.set_yticks([0, 100, 200])
+    ax0.set_yticklabels([1, 2, 3])
+    ax0.set_ylim(-2, ymax)
+    ax2.set_ylim(-2, ymax)
+    ax0.tick_params(which='major', labelsize=8, pad=0.5)
+
+    # make the hist ticks meaningful
+    b1_width = np.unique(np.round(np.diff(bins1), 8))
+    vals = np.arange(0, 35, 10)
+    t1s = np.zeros(vals.shape)
+    for i, v in enumerate(vals):
+        t1s[i] = v/(100*b1_width)
+    ax1.set_yticks(t1s)
+    ax1.set_yticklabels(vals)
+
+    b2_width = np.unique(np.round(np.diff(bins2), 8))
+    vals = np.arange(2, 9, 2)
+    t2s = np.zeros(vals.shape)
+    for i, v in enumerate(vals):
+        t2s[i] = v/(100*b2_width)
+    ax2.set_xticks(t2s)
+    ax2.set_xticklabels(vals)
+    ax2.legend(bbox_to_anchor=(0.8,0.9,0,0), fontsize=7.5)
+
+    return f, gs
 
 ''' FIGURE 5 '''
 

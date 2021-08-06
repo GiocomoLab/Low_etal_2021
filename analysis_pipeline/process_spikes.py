@@ -64,33 +64,6 @@ def tuning_curve(x, Y, dt, b, smooth=True, l=2, SEM=False):
         return firing_rate, centers
 
 
-def get_coordinates(tip, entry, distances):
-    '''
-    Convert position along probe to 3D brain coordinates
-    in microns, relative to MEC landmarks (see STAR Methods)
-
-    Params:
-    ------
-    tip : ndarray
-        coordinates of probe tip; shape(3)
-    entry : ndarray
-        coordinates of probe entry into MEC; shape(3)
-    distances : ndarray
-        distance of each cell from probe tip; shape(n_cells)
-        
-    Returns:
-    -------
-    coords : ndarray
-        coordinates for each cell; shape(n_cells, 3)
-        (ML, AP, DV)
-    '''
-    probe_vec = (entry - tip) # vector connecting tip coords to entry coords
-    l = np.linalg.norm(probe_vec) # length of the probe
-    coords = tip[None, :] + (distances[:, None]/l) * probe_vec[None, :]
-    
-    return(coords)
-
-
 def similarity(Y):
     '''
     Compute the trial-trial similarity. Compare the position-binned 
@@ -344,3 +317,90 @@ def clu_distance_cells(Y, H, map_idx, W):
     ll_cells = K * np.log(1 + np.exp(dd_by_cells)) + (1 - K) * np.log(1 + np.exp(-dd_by_cells))
 
     return dd_by_cells, ll_cells
+
+
+'''
+Histology Functions:
+Functions related to the anatomical location of cells in MEC.
+'''
+def get_coordinates(tip, entry, distances):
+    '''
+    Convert position along probe to 3D brain coordinates
+    in microns, relative to MEC landmarks (see STAR Methods)
+
+    Params:
+    ------
+    tip : ndarray
+        coordinates of probe tip; shape(3)
+        this comes from the histology
+    entry : ndarray
+        coordinates of probe entry into MEC; shape(3)
+    distances : ndarray
+        distance of each cell from probe tip; shape(n_cells)
+        
+    Returns:
+    -------
+    coords : ndarray
+        coordinates for each cell; shape(n_cells, 3)
+        (ML, AP, DV)
+    '''
+    probe_vec = (entry - tip) # vector connecting tip coords to entry coords
+    l = np.linalg.norm(probe_vec) # length of the probe
+    coords = tip[None, :] + (distances[:, None]/l) * probe_vec[None, :]
+    
+    return(coords)
+
+def remapper_locations(avg_ll_cell_all, \
+                        axis_coords, min_coord, max_coord, \
+                        BIN=50, THRESH=1, print_results=True):
+    '''
+    Compute the number of consistent remappers in each anatomical location.
+
+    Params:
+    ------
+    avg_ll_cell_all : ndarray
+        average log-likelihood distance to cluster for all cells
+        comes from clu_distance_cells
+        shape (n_total_cells, )
+    axis_coords: ndarray
+        DV, ML, or AP coordinates of each cell
+    min_coord : int
+        the minimum edge of the region in um (+ BIN)
+        paper uses DV=50, ML=-200, AP=50
+    max_coord : in
+        the maximum edge of the region in um (+ BIN)
+        paper uses DV=2050, ML=350, AP=700
+    BIN : int
+        bin size (um)
+        default is 50um
+    THRESH : int
+        maximum average log-likelihood for a cell to be considered a "consistent remapper"
+        default is 1
+
+    Returns:
+    -------
+    (Use to produce fig 3f.)
+    axis_pcts : ndarray
+        Percent of cells in each anatomical bin that are consistent remappers.
+    loc_remappers : ndarray
+        Coords for each bin with consistent remappers in it.
+    '''
+    # get bin indices
+    edges = np.arange(min_coord, max_coord, BIN)
+    idx = np.digitize(axis_coords, edges)
+
+    # get the total units in each bin and remappers in each bin
+    axis_unique, ct_all = np.unique(idx, return_counts=True) # total cells per bin
+    loc_remappers, ct_remappers = np.unique(idx[avg_ll_cell_all < THRESH], return_counts=True) # remappers per bin
+    if ct_all.shape[0] == ct_remappers.shape[0]: # check that we didn't lose any cells
+        axis_pcts = (ct_remappers/ct_all)*100
+    else:
+        axis_pcts = (ct_remappers/ct_all[axis_unique!=np.setdiff1d(axis_unique, loc_remappers)])*100
+
+    # print the results
+    if print_results:
+        print(f'N cells total = {np.sum(ct_all)}')
+        print(f'N cells strong remappers = {np.sum(ct_remappers)}')
+        print(f'strong remappers overall = {(np.sum(ct_remappers)/np.sum(ct_all)*100):.2f}%')
+    
+    return axis_pcts, loc_remappers
