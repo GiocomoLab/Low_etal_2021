@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from lvl.factor_models import KMeans
 
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import interp1d
@@ -64,6 +65,10 @@ def tuning_curve(x, Y, dt, b, smooth=True, l=2, SEM=False):
         return firing_rate, centers
 
 
+'''
+Population Analyses:
+Functions to explore remapping at the population level.
+'''
 def similarity(Y):
     '''
     Compute the trial-trial similarity. Compare the position-binned 
@@ -206,6 +211,207 @@ def map_similarity(sim, map_idx):
 
     return avg_within, avg_across
 
+''' K-means '''
+from lvl.factor_models import KMeans as lvl_kmeans
+from lvl.factor_models import NMF as lvl_soft_kmeans
+
+def fit_kmeans(Y, **kwargs):
+    '''
+    Params:
+    ------
+    Y : ndarray
+        normalized firing rates for each cell, position, trial
+        shape (n_trials, n_pos_bins, n_cells)
+    kwargs : passed to lvl_kmeans
+
+    Returns:
+    -------
+    kmeans_dict : dict
+        contains the k-means model outputs:
+        W : map ID for each trial; shape (n_trials, n_maps)
+        H : tuning curve estimates; shape (n_maps, n_cells*n_pos_bins)
+        Y_hat : predicted firing rates; shape (n_trials, n_pos_bins, n_cells)
+    '''
+    # reshape Y into (n_trials, n_cells*n_pos_bins)
+    Y = Y.transpose(0, 2, 1)
+    Y_unwrapped = np.reshape(Y, (Y.shape[0], -1))
+    
+    # fit model
+    model_kmeans = KMeans(**kwargs)
+    model_kmeans.fit(Y_unwrapped)
+
+    # store params
+    kmeans_dict = {}
+    W, H = model_kmeans.factors
+    Y_hat = model_kmeans.predict()
+    kmeans_dict['W'] = W
+    kmeans_dict['H'] = H
+    kmeans_dict['Y_hat'] = Y_hat
+    
+    return kmeans_dict
+
+
+'''
+Single Cell Analyses:
+Functions the assess the impact of remapping on single cells
+'''
+def FR_diff(FR_1, FR_2):
+    '''
+    Compute the absolute percent change in peak firing rate.
+
+    Params:
+    ------
+    FR_1, FR_2 : ndarray
+        trial-averaged, binned firing rate for each cell; shape (n_bins, n_cells)
+
+    Returns:
+    -------
+    pct_dFR : ndarray
+        percent change in peak firing rate; shape (n_cells, )
+    '''
+    peak_FR_1 = np.max(FR_1, axis=0)
+    peak_FR_2 = np.max(FR_2, axis=0)
+    pct_dFR = (np.abs(peak_FR_2 - peak_FR_1) / ((peak_FR_2 + peak_FR_1)/2))*100
+    return pct_dFR
+
+
+def spatial_similarity(FR_1, FR_2):
+    '''
+    Compute the cosine similarity between two sets of spatial tuning curves.
+
+    Params:
+    ------
+    FR_1, FR_2 : ndarray
+        trial-averaged, binned firing rate for each cell; shape (n_bins, n_cells)
+
+    Returns:
+    -------
+    spatial_sim : ndarray
+        cosine similarity; shape (n_cells, )
+    '''
+    norms_1 = np.linalg.norm(FR_1, axis=0)
+    norms_2 = np.linalg.norm(FR_2, axis=0)
+    spatial_sim = np.zeros(FR_1.shape[1])
+    for i, n1 in enumerate(norms_1):
+        n2 = norms_2[i]
+        normalized_FR_1 = FR_1[:, i]/n1
+        normalized_FR_2 = FR_2[:, i]/n2   
+        spatial_sim[i] = normalized_FR_1 @ normalized_FR_2
+    return spatial_sim
+
+
+def spatial_info(posx, B, bin_size, dt):
+    '''
+    compute spatial information (bits per second) averaged across all trials
+    
+    Params:
+    -------
+    posx : ndarray
+        position at each observation; shape (n_obs, )
+    B : ndarray
+        number of spikes per observation; shape (n_obs, n_cells)
+    b : int
+        bin size (cm)
+    dt : int
+        time per observation (s)
+        
+    Returns:
+    -------
+    SI : ndarray
+        spatial information for each cell; shape (n_cells, )
+    '''
+    # get position bins
+    edges = np.arange(0, np.max(posx) + bin_size, bin_size)
+    centers = (edges[:-1] + edges[1:])/2
+    b_idx = np.digitize(posx, edges)
+    if np.max(posx) == edges[-1]:
+        b_idx[b_idx==np.max(b_idx)] = np.max(b_idx) - 1
+    unique_bdx = np.unique(b_idx)
+    
+    # get params
+    T = dt * posx.shape[0] # total time
+    L = np.sum(B, axis=0) / T # overall mean FR
+    
+    SI = np.zeros(B.shape[1]) # spatial info
+    for i, b in enumerate(unique_bdx):
+        occupancy = dt * np.sum(b_idx == b)
+        t = occupancy / T # occupancy ratio (time in bin/total time)
+        spike_ct = np.sum(B[b_idx == b, :], axis=0)
+        l = spike_ct / occupancy # mean FR for that bin
+        SI += t * l * np.log2((l / L) + 0.0001)
+    SI[L == 0] = 0
+        
+    return SI
+
+
+def shuffle_SI(posx, B, bin_size, dt, n_repeats=100, max_shift=50):
+    '''
+    Get shuffled spatial information:
+        for each repeat, spikes are shifted in time by a random amount, up to max_shift * dt
+        spikes for all cells are shifted together, maintaining relationship between cells
+        temporal firing pattern is preserved
+    '''
+    n_cells = B.shape[1]
+    shuffle = np.zeros((n_cells, n_repeats))
+    shifts = (np.random.rand(n_repeats, 1)*max_shift).astype(int)
+    for i, k in enumerate(shifts):
+        shuff_B = np.roll(B.copy(), k, axis=0)
+        shuffle[:, i] = spatial_info(posx, shuff_B, bin_size, dt)    
+    return shuffle
+
+
+def change_SI(SI_1, SI_2):
+    '''
+    Compute the absolute fold change in spatial information for each cell.
+    '''
+    # remove zeros
+    map0 = SI_map0[SI_map0 > 0]
+    map1 = SI_map1[SI_map0 > 0]
+    
+    # get the change in SI
+    return np.abs((map0 - map1)/map0)
+
+
+def percent_spatial(d, THRESH=95):
+    '''
+    Get the number of cells that are spatial in 
+    both maps, one map, or neither.
+
+    Params:
+    ------
+    d : dict
+        data[mouse][session]
+    THRESH : int
+        percentile of shuffle to be considered significant
+
+    Returns:
+    -------
+    int, number of cells in each session that are:
+    retain : spatial in both maps
+    gain : spatial in one map
+    neither : not spatial in either map
+
+    total cells : total number of cells in each session
+    '''
+    # get data
+    SI_map0 = d['SI'][0, :].copy()
+    SI_map1 = d['SI'][1, :].copy()
+    shuff_SI_map0 = d['shuff'][0].copy()
+    shuff_SI_map1 = d['shuff'][1].copy()
+
+    # get cells that are significantly spatial in each map
+    flat_shuff_SI_map0 = shuff_SI_map0.flatten()
+    flat_shuff_SI_map1 = shuff_SI_map1.flatten()        
+    sig_0_idx = SI_map0 > np.percentile(flat_shuff_SI_map0, THRESH)
+    sig_1_idx = SI_map1 > np.percentile(flat_shuff_SI_map1, THRESH)
+    
+    # get number of cells
+    total_cells = SI_map0.shape[0]
+    retain = np.sum([sig_1_idx & sig_0_idx])
+    gain = np.sum([sig_1_idx & ~sig_0_idx]) + np.sum([~sig_1_idx & sig_0_idx])
+    neither = np.sum([~sig_1_idx & ~sig_0_idx])
+
+    return retain, gain, neither, total_cells
 
 '''
 Distance to Cluster:

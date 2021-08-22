@@ -330,6 +330,89 @@ for i, c in enumerate(cell_colors):
     cell_colors[i] = tuple(c)
 cell_colors[2] = 'xkcd:gold'
 
+def plot_fig4a(data, mouse, session, cell_IDs, \
+                FR_naive, FR_0, FR_1, \
+                FR_sem, FR_0_sem, FR_1_sem):
+    '''
+    Examples of remapping cells.
+
+    Params:
+    ------
+    cell_IDs : ndarray
+        ID numbers for the example cells.
+    FR_naive, FR_0, FR_1 : ndarray
+        firing rate by position across maps or within each map
+        shape (n_pos_bins, n_cells)
+    FR_sem, FR_0_sem, FR_1_sem : ndarray
+        SEM for the firing rate arrays; shape (n_pos_bins, n_cells)
+    '''
+    # get data
+    d = data[mouse][session] 
+    A = d['A']
+    B = d['B']  
+    cells = d['cells']
+
+    # figure params:
+    gs = gridspec.GridSpec(19, len(cell_IDs), hspace=1.5, wspace=0.3)
+    f = plt.figure(figsize=(6, 2.3)) 
+    PT_SIZE = 1
+    LW_MEAN = 1
+    LW_SEM = 0.3
+
+    for i, cell_ID in enumerate(cell_IDs):
+        # draw raster plot
+        ax0 = plt.subplot(gs[:11, i])
+        sdx_0 = B[map0_idx, np.where(cells==cell_ID)[0][0]].astype(bool)
+        ax0.scatter(A[map0_idx, 0][sdx_0], A[map0_idx, 2][sdx_0], color='k', lw=0, s=PT_SIZE, alpha=.1)
+        sdx_1 = B[map1_idx, np.where(cells==cell_ID)[0][0]].astype(bool)
+        ax0.scatter(A[map1_idx, 0][sdx_1], A[map1_idx, 2][sdx_1], color=cell_colors[i], lw=0, s=PT_SIZE, alpha=.1)
+        ax0.set_xlim((0, 400))
+        ylim_ax = [0, np.max(A[:, 2])]
+        ax0.set_ylim(ylim_ax[::-1])
+        ax0.set_title('cell ' + str(cell_ID), fontsize=10, pad=3)
+
+        # plot tuning curves with SEM
+        sdx = (np.where(cells==cell_ID)[0][0]).astype(int)
+        ax1 = plt.subplot(gs[11:15, i])
+        ax1.plot(FR_0[:, sdx], 'k', lw=LW_MEAN, alpha=0.9)
+        ax1.fill_between(binned_pos/2, FR_0[:, sdx] + FR_0_sem[:, sdx], FR_0[:, sdx] - FR_0_sem[:, sdx],
+                         color='k', linewidth=LW_SEM, alpha=0.3)
+        ax1.plot(FR_1[:, sdx], color=cell_colors[i], lw=LW_MEAN, alpha=1)
+        ax1.fill_between(binned_pos/2, FR_1[:, sdx] + FR_1_sem[:, sdx], FR_1[:, sdx] - FR_1_sem[:, sdx],
+                         color=cell_colors[i], linewidth=LW_SEM, alpha=0.4)
+     
+        # plot naive tuning curve with SEM
+        sdx = (np.where(cells==cell_ID)[0][0]).astype(int)
+        ax2 = plt.subplot(gs[15:, i])
+        ax2.plot(FR_naive[:, sdx], 'k', lw=LW_MEAN, alpha=0.6)
+        ax2.fill_between(binned_pos/2, FR_naive[:, sdx] + FR_sem[:, sdx], \
+                            FR_naive[:, sdx] - FR_sem[:, sdx],
+                            color='k', linewidth=LW_SEM, alpha=0.1)
+        
+        if i == 0:
+            ax0.set_ylabel('trial number', fontsize=10, labelpad=2)
+            ax1.set_ylabel('FR (Hz)', fontsize=10, labelpad=7, horizontalalignment='right', y=0.8)
+        else:
+            ax0.tick_params(labelleft=False)
+            ax1.tick_params(labelleft=False)
+            ax2.tick_params(labelleft=False)
+        if i == len(cell_IDs)//2:
+            ax2.set_xlabel('track position (cm)', fontsize=10, labelpad=2, horizontalalignment='right', x=0.8)
+        ax0.set_xticks(np.arange(0, 425, 200))
+        ax0.tick_params(labelbottom=False, which='major', labelsize=8, pad=0.5)
+        ax1.set_xlim([0, 200])
+        ax1.set_yticks([0, 20])
+        ax1.set_ylim([0, 27])
+        ax1.set_xticks(np.arange(0, 225, 100))
+        ax1.tick_params(labelbottom=False, which='major', labelsize=8, pad=0.5)
+        ax2.set_xlim([0, 200])
+        ax2.set_yticks([0, 20])
+        ax2.set_ylim([0, 27])
+        ax2.set_xticks(np.arange(0, 225, 100))
+        ax2.set_xticklabels(np.arange(0, 450, 200))
+        ax2.tick_params(which='major', labelsize=8, pad=0.5)
+
+    return f, gs
 
 def plot_fig4b(dissim, pct_dFR):
     '''
@@ -349,7 +432,7 @@ def plot_fig4b(dissim, pct_dFR):
     LW_THRESH = 1.5
     LW_HIST = 1.5
 
-    # plot it all cells
+    # plot change in FR vs. dissimilarity, all cells
     ax0 = plt.subplot(gs[2:, :-2])
     ax0.scatter(dissim, pct_dFR, color='k', s=PT_SIZE, lw=0, alpha=0.2)
     ax0.set_xlim(0, 1.05)
@@ -421,7 +504,200 @@ def plot_fig4b(dissim, pct_dFR):
 
     return f, gs
 
+def plot_fig4c(dissim, pct_dFR, cells, cell_IDs):
+    '''
+    Plot change in firing rate vs. spatial dissimilarity for an example session.
+
+    Params
+    ------
+    dissim : ndarray
+        1 - cosine similarity across maps; shape (n_cells, )
+    pct_dFR : ndarray
+        percent change in peak firing rate; shape (n_cells, )
+    cells : ndarray
+        all cell IDs for this session
+    cell_IDs : ndarray
+        example cell IDs
+    '''
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.7, 1.7))
+    POINT_SIZE = 28
+
+    # plot change in firing rate vs. dissimilarity
+    ax.scatter(dissim, pct_dFR, color='k', s=POINT_SIZE, lw=0, alpha=0.2)
+
+    # plot examples
+    for i, cell_ID in enumerate(cell_IDs):
+        cdx = np.where(cells==cell_ID)[0][0]
+        ax.scatter(dissim[cdx], frac_dFR[cdx], \
+                    edgecolors='k', facecolors=cell_colors[i], \
+                    lw=0.3, s=POINT_SIZE+2, alpha=1)
+
+    # labels and lims
+    ax.set_xlim(-0.02, ax.get_xlim()[1])
+    ax.set_xlabel('spatial dissimilarity', fontsize=10, labelpad=1)
+    ax.set_ylabel('change in FR', fontsize=10, labelpad=1)
+    ax.set_yticks(np.arange(0, 175, 50))
+    ax.set_yticklabels(np.arange(1, 3, 0.5))
+    ax.set_xticks([0, 0.25, 0.5])
+    ax.set_xticklabels([0, 0.25, 0.5])
+    ax.tick_params(which='major', labelsize=8, pad=0.8)
+
+    return f, ax
+
+
+def plot_fig4d(SI_map1, SI_map2, SI_map1_shuff, SI_map2_shuff, cells, cell_IDs):
+    '''
+    Plot the spatial information for each cell in each map for an example session.
+
+    Params
+    ------
+    SI_map1, SI_map2 : ndarray
+        spatial information for each cell in each map
+    SI_map1_shuff, SI_map2_shuff : ndarray
+        shuffled spatial information for each map
+    cells : ndarray
+        all cell IDs for this session
+    cell_IDs : ndarray
+        example cell IDs
+    '''
+    f, ax = plt.subplots(1, 1, figsize=(1.7, 1.7))
+    POINT_SIZE = 28
+    UNITY_WIDTH = 2
+    SHUFF_WIDTH = 1.5
+
+    ax.scatter(SI_map2, SI_map1, color='k', lw=0, s=POINT_SIZE, alpha=0.2)
+    ax.set_ylabel('spatial info.\nmap 1', fontsize=10, labelpad=1)
+    ax.set_xlabel('spatial info.\nmap 2', fontsize=10, labelpad=1)
+
+    # plot examples
+    for i, c in enumerate(cell_IDs):
+        cell_ID = c
+        cdx = np.where(cells==cell_ID)[0][0]
+        ax.scatter(SI_map1[cdx], SI_map0[cdx], \
+                    edgecolors='k', facecolors=cell_colors[i], lw=0.3, s=POINT_SIZE+1, alpha=1)
+
+    # plot unity
+    xlims = ax.get_xlim()
+    ylims = ax.get_ylim()
+    min_lim = np.min([xlims[0], ylims[0]])
+    max_lim = np.max([xlims[1], ylims[1]])
+    ax.plot([min_lim, max_lim], [min_lim, max_lim], \
+                '--k', lw=SHUFF_WIDTH, alpha=1)
+
+    # plot significance threshold
+    shuff_0 = SI_map1_shuff.flatten()
+    shuff_0_thresh = np.percentile(shuff_0, 95)
+    ax.plot(ax.get_xlim(), [shuff_0_thresh, shuff_0_thresh], \
+            ':k', lw=SHUFF_WIDTH, alpha=1)
+    shuff_1 = SI_map2_shuff.flatten()
+    shuff_1_thresh = np.percentile(shuff_1, 95)
+    ax.plot([shuff_1_thresh, shuff_1_thresh], ax.get_ylim(), \
+            ':k', lw=SHUFF_WIDTH, alpha=1)
+
+    ax.set_xlim([min_lim, max_lim])
+    ax.set_ylim([min_lim, max_lim])
+    ax.set_xticks([0, 2.5, 5])
+    ax.set_yticks([0, 2.5, 5])
+    ax.tick_params(which='major', labelsize=8, pad=0.8)
+
+    return f, ax
+
+
+def plot_fig4e(percents, label=True):
+    '''
+    Plot the percent of all cells that are spatial in both maps, 
+    one map, or neither map.
+
+    Params:
+    ------
+    percents : ndarray
+        percent of cells that are spatial in both, one, or neither map.
+        shape (3, )
+    labels : bool
+        if True, includes category and percentage labels on the plot
+    '''
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(2, 2))
+    labels = ['both', 'one', 'neither']
+
+    # plot percentages
+    if label:
+        p = ax.pie(pcts, labels=labels, autopct='%1.1f%%', \
+              colors = ['k', 'k', 'w'], \
+              wedgeprops=dict(linewidth=0.5, edgecolor='k'))
+    else:
+        p = ax.pie(percents, labels=None, \
+                      colors = ['k', 'k', 'w'], \
+                      wedgeprops=dict(linewidth=0.5, edgecolor='k'))
+    
+    # adjust the colors
+    p[0][1].set_alpha(0.2)
+    p[0][0].set_alpha(0.8)
+
+    return f, ax
+
+
+def plot_fig4f(data, mice, sessions):
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.7, 1.7))
+    PT_SIZE = 15
+    LW_THRESH = 1.5
+
+    for m, session in zip(mice, sessions):
+        for s in session:
+            d = data[m][s]
+            ll_cells = np.mean(d['ll_cells'].copy(), axis=1)
+            
+            # get data
+            SI_map0 = d['SI'][0, :].copy()
+            SI_map1 = d['SI'][1, :].copy()
+            shuff_SI_map0 = d['shuff'][0].copy()
+            shuff_SI_map1 = d['shuff'][1].copy()
+            SI_keep = np.max(d['SI'].copy(), axis=0) # we will plot whichever SI is higher
+
+            # get sig indices for each map
+            flat_shuff_SI_map0 = shuff_SI_map0.flatten()
+            flat_shuff_SI_map1 = shuff_SI_map1.flatten()        
+            sig_0_idx = SI_map0 > np.percentile(flat_shuff_SI_map0, 95)
+            sig_1_idx = SI_map1 > np.percentile(flat_shuff_SI_map1, 95)
+            both_idx = [sig_0_idx & sig_1_idx]
+            one_idx = [(sig_0_idx & ~sig_1_idx) | (~sig_0_idx & sig_1_idx)]
+            not_idx = [~sig_0_idx & ~sig_1_idx]
+            
+            # plot the data
+            ax.scatter(SI_keep, ll_cells, color='k', 
+                       s=PT_SIZE, lw=0, alpha=0.3, zorder=1)
+
+    # add threshold for consistent remapper
+    y_lims = ax.get_ylim()
+    x_lims = ax.get_xlim()
+    ax.hlines(THRESH, x_lims[0], x_lims[1], colors='k', lw=LW_THRESH, linestyles='dashed', alpha=1, zorder=4)
+
+    # labels and lims
+    ax.set_xlim([-0.1, x_lims[1]])
+    ax.set_ylim(y_lims)
+    ax.set_xticks([0, 4, 8, 12])
+    ax.set_yticks(np.arange(5))
+    ax.tick_params(which='major', labelsize=8, pad=0.8)
+    ax.set_ylabel('distance to\nmap center', fontsize=10, labelpad=1)
+    ax.set_xlabel('spatial information', fontsize=10, labelpad=1)
+
+    return f, ax
+
+
+
+
 ''' FIGURE 5 '''
+''' set colors for each cell type
+orange = putative grid cells
+blue = putative border cells
+'''
+cell_colors = np.asarray([[241, 147, 45, 255], [25, 101, 176, 255]])
+cell_colors = cell_colors/255
+cell_colors = list(cell_colors)
+for i, c in enumerate(cell_colors):
+    cell_colors[i] = tuple(c)
 
 ''' FIGURE 6 '''
 
