@@ -477,6 +477,9 @@ def find_grid_border(FR_manip, FR_normal, stable_idx, \
     stable_idx : bool
         True for cells that are spatially stable
         in both gain manipulation and normal trials
+    corr_gain_manip : ndarray
+        pearson correlation between spatial firing rate on 
+        normal vs. gain manipulation trials
     '''
     n_cells = FR_normal.shape[1]
     
@@ -490,7 +493,7 @@ def find_grid_border(FR_manip, FR_normal, stable_idx, \
     # identify putative grid and border cells
     grid_idx = (corr_gain_manip < grid_thresh) & stable_idx
     border_idx = (corr_gain_manip > border_thresh) & stable_idx
-    return grid_idx, border_idx
+    return grid_idx, border_idx, corr_gain_manip
 
 
 '''

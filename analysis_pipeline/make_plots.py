@@ -698,6 +698,97 @@ cell_colors = cell_colors/255
 cell_colors = list(cell_colors)
 for i, c in enumerate(cell_colors):
     cell_colors[i] = tuple(c)
+GC_COLOR = cell_colors[0]
+BD_COLOR = cell_colors[1]
+
+def plot_fig5cd(data, mouse, session, cell_IDs, \
+                FR_0, FR_1, FR_0_sem, FR_1_sem, binned_pos):
+    '''
+    plot example rasters and tuning curves for 3 example grids and 2 example borders
+    last 5 normal trials and 5 gain manipulation trials
+    
+    Params:
+    ------
+    cell_IDs : ndarray
+        ID numbers for the example cells.
+    FR_0, FR_1 : ndarray
+        firing rate by position for last 5 normal, 5 gain manipulation trials
+        shape (n_pos_bins, n_cells)
+    FR_0_sem, FR_1_sem : ndarray
+        SEM for the firing rate arrays; shape (n_pos_bins, n_cells)
+    binned_pos : ndarray
+        position bin centers for the firing rate arrays; shape (n_pos_bins)
+    '''
+    # get data
+    d = data[mouse][session] 
+    A = d['A_gm']
+    B = d['B_gm']  
+    cells = d['cells']
+    [manip_idx, normal_idx] = d['gain_idx']
+
+    # get correlation/similarity for each cell
+    corr_gain_manip = d['corr_gain_manip']
+    cell_idx = np.isin(cells, cell_IDs)
+    correlations = corr_gain_manip[cell_idx]
+
+    # set figure params
+    gs = gridspec.GridSpec(2, len(cell_IDs), hspace=0.2, wspace=0.6)
+    f = plt.figure(figsize=(4.8, 1.2)) 
+    PT_SIZE = 8
+    PT_W = 0.7
+    LW_FR = 0.75
+    LW_SEM = 0.5
+    
+    for i, cell_ID in enumerate(cell_IDs):
+        if i < 3:
+            COLOR = GC_COLOR
+        else:
+            COLOR = BD_COLOR
+        
+        # draw raster plot
+        ax0 = plt.subplot(gs[0, i])
+        sdx = B[normal_idx, :][:, np.where(cells==cell_ID)[0][0]].astype(bool)
+        ax0.scatter(A[:, 0][normal_idx][sdx], A[:, 2][normal_idx][sdx], 
+                    marker='|', c='k', lw=PT_W, s=PT_SIZE, alpha=.4)
+        sdx = B[manip_idx, :][:, np.where(cells==cell_ID)[0][0]].astype(bool)
+        ax0.scatter(A[:, 0][manip_idx][sdx], A[:, 2][manip_idx][sdx], 
+                    marker='|', c=COLOR, lw=PT_W, s=PT_SIZE, alpha=.4)
+
+        if i == 0:
+            ax0.set_ylabel('trial', fontsize=9, labelpad=1)
+            ax0.set_title('unit {}'.format(cell_ID), fontsize=9, pad=15)
+            ax0.text(-180, 293, 'corr = {}'.format(np.round(correlations[i], 2)), fontsize=8)
+        else:
+            ax0.set_title('unit {}'.format(cell_ID), fontsize=9, pad=15)
+            ax0.text(100, 293, '{}'.format(np.round(correlations[i], 2)), fontsize=8)
+        ax0.tick_params(which='major', labelbottom=False, labelsize=7.5, pad=0.5)
+        ax0.set_xlim((0, 400))
+        ax0.set_xticks([0, 200, 400])
+        ylim_ax = [np.min(A[:, 2])+4.5, np.max(A[:, 2])+0.5]
+        ax0.set_ylim(ylim_ax[::-1])
+
+        # plot tuning curve with SEM
+        sdx = (np.where(cells==cell_ID)[0][0]).astype(int)
+        ax1 = plt.subplot(gs[1, i])
+        ax1.plot(FR_0[:, sdx], 'k', linewidth=LW_FR)
+        ax1.fill_between(binned_pos/2, FR_0[:, sdx] + FR_0_sem[:, sdx], FR_0[:, sdx] - FR_0_sem[:, sdx], 
+                         color='k', lw=LW_SEM, alpha=0.1)
+        ax1.plot(FR_1[:, sdx], color=COLOR, linewidth=LW_FR)
+        ax1.fill_between(binned_pos/2, FR_1[:, sdx] + FR_1_sem[:, sdx], FR_1[:, sdx] - FR_1_sem[:, sdx], 
+                         color=COLOR, lw=LW_SEM, alpha=0.1)
+
+        if i == 0:
+            ax1.set_ylabel('FR (Hz)', fontsize=9, labelpad=5)
+        ax1.set_xlim([0, 200])
+        ax1.set_xticks(np.arange(0, 225, 100))
+        ax1.set_xticklabels(np.arange(0, 450, 200))
+        ax1.tick_params(which='major', labelsize=7.5, pad=0.5)
+        if i == 1:
+            ax1.set_xlabel('position (cm)', fontsize=9, labelpad=1)
+        elif i == 3:
+            ax1.set_xlabel('position (cm)', fontsize=9, labelpad=1, horizontalalignment='left', x=0.5)
+
+    return f, gs
 
 ''' FIGURE 6 '''
 
