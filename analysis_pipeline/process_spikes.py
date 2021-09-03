@@ -4,7 +4,7 @@ from lvl.factor_models import KMeans
 
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import interp1d
-from scipy.stats import sem
+from scipy import stats
 import scipy.io
 from scipy.spatial import distance
 
@@ -53,7 +53,7 @@ def tuning_curve(x, Y, dt, b, smooth=True, l=2, SEM=False):
     for i in range(unique_bdx.shape[0]):
         spike_ct = np.sum(Y[b_idx == unique_bdx[i], :], axis=0)
         occupancy = dt * np.sum(b_idx==unique_bdx[i])
-        spike_sem[i, :] = sem(Y[b_idx == unique_bdx[i], :]/dt, axis=0)
+        spike_sem[i, :] = stats.sem(Y[b_idx == unique_bdx[i], :]/dt, axis=0)
         firing_rate[i, :] = spike_ct / occupancy
     if smooth:
         firing_rate = gaussian_filter1d(firing_rate, l, axis=0, mode='wrap')
@@ -412,6 +412,86 @@ def percent_spatial(d, THRESH=95):
     neither = np.sum([~sig_1_idx & ~sig_0_idx])
 
     return retain, gain, neither, total_cells
+
+
+'''
+Functional Cell Types:
+functions to identify and analyze putative cell types
+'''
+def find_interneurons(fr_thresh=15, **kwargs):
+    '''
+    get filter to remove high firing cells (i.e. putative interneurons)
+
+    Params:
+    ------
+    fr_thresh : float
+        minimum average firing rate for a cell to be considered an interneuron
+    **kwargs : passed to tuning_curve
+
+    Returns:
+    -------
+    excite_idx : bool
+        True for cells with an avg firing rate lower than fr_thresh
+        shape (n_cells, )
+
+    '''
+    FR, _ = tuning_curve(**kwargs)
+    mean_FR = np.mean(FR, axis=0)
+    excite_idx = mean_FR < 15
+    return excite_idx
+
+def find_spatially_stable(Y, stability_thresh=0.25):
+    '''
+    finds cells that are spatially stable.
+
+    Params:
+    ------
+    Y : ndarray
+        normalized firing rate by 5cm position bins by trial for each cell
+        shape (n_trials, n_pos_bins, n_cells)
+    stability_thresh : float
+        min avg trial-trial correlation to be considered spatially stable
+    '''
+    n_cells = Y.shape[-1]
+    avg_sim = np.zeros(n_cells)
+    for i in range(n_cells):
+        y = np.squeeze(Y[:, :, i])
+        cell_sim = np.abs(distance.pdist(y, 'correlation')-1)
+        avg_sim[i] = np.mean(cell_sim)
+    stable_idx = avg_sim > stability_thresh
+    return stable_idx
+
+def find_grid_border(FR_manip, FR_normal, stable_idx, \
+                        grid_thresh=0.1, border_thresh=0.29):
+    '''
+    identify grid and border cells based on their response to gain manipulation
+    the thresholds used here are based on Campbell et al., 2018
+    (see STAR Methods for more details)
+
+    Params:
+    ------
+    FR_manip, FR_normal : ndarray
+        trial-averaged, binned firing rate for each cell
+        gain manipulation and normal trials, respectively
+        shape (n_bins, n_cells)
+    stable_idx : bool
+        True for cells that are spatially stable
+        in both gain manipulation and normal trials
+    '''
+    n_cells = FR_normal.shape[1]
+    
+    # compare firing rates for each cell
+    corr_gain_manip = np.zeros(n_cells)
+    for i in range(n_cells):
+        fr_manip = FR_manip[:, i]
+        fr_norm = FR_normal[:, i]
+        corr_gain_manip[i], p = stats.pearsonr(fr_norm, fr_manip)
+
+    # identify putative grid and border cells
+    grid_idx = (corr_gain_manip < grid_thresh) & stable_idx
+    border_idx = (corr_gain_manip > border_thresh) & stable_idx
+    return grid_idx, border_idx
+
 
 '''
 Distance to Cluster:
