@@ -213,7 +213,6 @@ def map_similarity(sim, map_idx):
 
 ''' K-means '''
 from lvl.factor_models import KMeans as lvl_kmeans
-from lvl.factor_models import NMF as lvl_soft_kmeans
 
 def fit_kmeans(Y, **kwargs):
     '''
@@ -421,10 +420,12 @@ def ds_to_match(map_idx, speed):
     
     return np.sort(ds_0.astype(int)), np.sort(ds_1.astype(int)), np.sort(ds_all.astype(int))
 
-def crossvalidate_blocks(model, X, y, n_repeats=10, train_pct=0.9):
+def crossvalidate_blocks(model, X, y, train_data_idx, test_data_idx, n_repeats=10, train_pct=0.9):
     '''
     Train on train_pct of the data, test on the remaining withheld data.
     Trains/tests on blocks of data, splitting the data into n_repeats contiguous chunks.
+    To train and test on the same dataset, set train_data_idx = test_data_idx.
+    To train and test on different subsets of data, set train_data_idx and test_data_idx accordingly.
 
     Params:
     ------
@@ -433,6 +434,10 @@ def crossvalidate_blocks(model, X, y, n_repeats=10, train_pct=0.9):
         firing rate for each cell; shape (n_obs, n_cells)
     y : ndarray
         variable to predict; shape (n_obs,)
+    train_data_idx : ndarray
+        indices for all possible training observations
+    test_data_idx : ndarray
+        indices for all possible test observations
     n_repeats : int
         number of cross-validation runs/chunks of data; optional, default is 10
     train_pct : float
@@ -443,9 +448,7 @@ def crossvalidate_blocks(model, X, y, n_repeats=10, train_pct=0.9):
     test_scores : ndarray
         model score for each test block; shape (n_repeats,)
     '''
-    n_samples = X.shape[0]
-    train_data_idx = np.arange(n_samples)
-    test_folds = np.array_split(train_data_idx, n_repeats)
+    test_folds = np.array_split(test_data_idx, n_repeats)
 
     test_scores = []    
     for i in trange(n_repeats):        
