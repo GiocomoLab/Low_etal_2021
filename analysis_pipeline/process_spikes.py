@@ -250,6 +250,224 @@ def fit_kmeans(Y, **kwargs):
     
     return kmeans_dict
 
+''' Decoder Model + Utils '''
+import scipy.stats
+normcdf = scipy.stats.norm.cdf
+normpdf = scipy.stats.norm.pdf
+
+from scipy.linalg import cho_factor, cho_solve
+from sklearn.base import BaseEstimator
+from sklearn.utils.validation import check_random_state
+
+class CircularRegression(BaseEstimator):
+    """
+    Reference
+    ---------
+    Brett Presnell, Scott P. Morrison and Ramon C. Littell (1998). "Projected Multivariate
+    Linear Models for Directional Data". Journal of the American Statistical Association,
+    Vol. 93, No. 443. https://www.jstor.org/stable/2669850
+    
+    Notes
+    -----
+    Only works for univariate dependent variable.
+    """
+    def __init__(self, alpha=0.0, tol=1e-5, max_iter=100):
+        self.alpha = alpha
+        self.tol = tol
+        self.max_iter = max_iter
+    
+    def fit(self, X, y):
+        """
+        Parameters
+        ----------
+        X : array
+            Independent variables, has shape (n_timepoints x n_neurons)
+        y : array
+            Circular dependent variable, has shape (n_timepoints x 1),
+            all data should lie on the interval [-pi, +pi].
+        """
+        
+        # Convert 1d circular variable to 2d representation
+        u = np.column_stack([np.sin(y), np.cos(y)])
+
+        # Randomly initialize weights. Ensure scaling does
+        W = np.random.randn(X.shape[1], 2)
+        W /= np.linalg.norm(W, "fro")
+        W /= np.linalg.norm(X, "fro")
+        
+        # Cache neuron x neuron gram matrix. This is used below
+        # in the M-step to solve a linear least squares problem
+        # in the form inv(XtX) @ XtY. Add regularization term to
+        # the diagonal.
+        XtX = X.T @ X
+        XtX[np.diag_indices_from(XtX)] += self.alpha
+        XtX = cho_factor(XtX)
+
+        # Compute model prediction in 2d space, and projection onto
+        # each observed u.
+        XW = (X @ W)
+        t = np.sum(u * XW, axis=1)
+        tcdf = normcdf(t)
+        tpdf = normpdf(t)
+
+        self.log_like_hist_ = [
+            np.log(2 * np.pi) - 
+            0.5 * np.mean(np.sum(XW * XW, axis=1), axis=0) +
+            np.mean(np.log(1 + t * tcdf / tpdf))
+        ]
+
+        for itr in range(self.max_iter):
+
+            # E-step.
+            m = t + (tcdf / ((tpdf + t * tcdf)))
+            XtY = X.T @ (m[:, None] * u)
+
+            # M-step.
+            W = cho_solve(XtX, XtY)
+            
+            # Recompute model prediction.
+            XW = X @ W
+            t = np.sum(u * XW, axis=1)
+            tcdf = normcdf(t)
+            tpdf = normpdf(t)
+
+            # Store log-likelihood.
+            self.log_like_hist_.append(
+                np.log(2 * np.pi) - 
+                0.5 * np.mean(np.sum(XW * XW, axis=1), axis=0) +
+                np.mean(np.log(1 + t * tcdf / tpdf))
+            )
+            
+            # Check convergence.
+            if (self.log_like_hist_[-1] - self.log_like_hist_[-2]) < self.tol:
+                break
+    
+        self.weights_ = W
+    
+    def predict(self, X):
+        u_pred = X @ self.weights_
+        return np.arctan2(u_pred[:, 0], u_pred[:, 1])
+
+    def score(self, X, y):
+        """
+        Returns 1 minus mean angular similarity between y and model prediction.
+        
+        score == 1 for perfect prediction
+        score == 0 in expectation for random prediction
+        score == -1 if prediction is off by 180 degrees.
+        """
+        y_pred = self.predict(X)
+        return np.mean(np.cos(y - y_pred))
+
+def ds_to_match(map_idx, speed):
+    '''
+    Downsample to match running speed and number of observations for two maps.
+
+    Params:
+    ------
+    map_idx : ndarray
+        True if neural activity occupied that map on that observation; shape (n_maps, n_obs)
+    speed : ndarray
+        running speed at each observation; shape (n_obs,)
+
+    Returns:
+    -------
+    ds_0 : ndarray
+        indices for downsampling map 0 to match map 1; shape (n_downsampled_obs,)
+    ds_1 : ndarray
+        indices for downsampling map 1 to match map 0; shape (n_downsampled_obs,)
+    ds_all : ndarray
+        indices for downsampling observations from both maps; shape (n_downsampled_obs,)
+    '''
+    # get indices for each map's observations
+    n_obs = map_idx.shape[1]
+    all_idx = np.arange(n_obs)
+    map0_idx = map_idx[0, :]
+    map1_idx = map_idx[1, :]
+
+    # bin running speed into 10cm/s bins
+    edges = np.arange(10, np.max(speed), 10)
+    speed_idx = np.digitize(speed, edges)
+
+    # arrays to hold indices for downsampling
+    ds_all = np.asarray([])
+    ds_0 = np.asarray([])
+    ds_1 = np.asarray([])
+
+    # match occupancy of each bin for each map
+    bins = np.unique(speed_idx)
+    for b in bins:
+        idx_0 = np.where(map0_idx & (speed_idx == b))[0]
+        idx_1 = np.where(map1_idx & (speed_idx == b))[0]
+        idx_all = all_idx[speed_idx == b]
+        if idx_0.shape[0] > idx_1.shape[0]:
+            # need to downsample map 0 for this speed bin
+            n_timepts = idx_1.shape[0]
+            ds_all = np.append(ds_all, np.random.choice(idx_all, n_timepts, replace=False))        
+            ds_0 = np.append(ds_0, np.random.choice(idx_0, n_timepts, replace=False))
+            ds_1 = np.append(ds_1, idx_1)
+        elif idx_0.shape[0] < idx_1.shape[0]:
+            # need to downsample map 1 for this speed bin
+            n_timepts = idx_0.shape[0]
+            ds_all = np.append(ds_all, np.random.choice(idx_all, n_timepts, replace=False))
+            ds_0 = np.append(ds_0, idx_0)
+            ds_1 = np.append(ds_1, np.random.choice(idx_1, n_timepts, replace=False))
+        else:
+            # only downsample from both maps
+            n_timepts = idx_0.shape[0]
+            ds_0 = np.append(ds_0, idx_0)
+            ds_1 = np.append(ds_1, idx_1)
+            ds_all = np.append(ds_all, np.random.choice(idx_all, n_timepts, replace=False))
+    
+    return np.sort(ds_0.astype(int)), np.sort(ds_1.astype(int)), np.sort(ds_all.astype(int))
+
+def crossvalidate_blocks(model, X, y, n_repeats=10, train_pct=0.9):
+    '''
+    Train on train_pct of the data, test on the remaining withheld data.
+    Trains/tests on blocks of data, splitting the data into n_repeats contiguous chunks.
+
+    Params:
+    ------
+    model : decoder model defined above
+    X : ndarray
+        firing rate for each cell; shape (n_obs, n_cells)
+    y : ndarray
+        variable to predict; shape (n_obs,)
+    n_repeats : int
+        number of cross-validation runs/chunks of data; optional, default is 10
+    train_pct : float
+        percent of data to use for training; optional, default is 0.9
+
+    Returns:
+    -------
+    test_scores : ndarray
+        model score for each test block; shape (n_repeats,)
+    '''
+    n_samples = X.shape[0]
+    train_data_idx = np.arange(n_samples)
+    test_folds = np.array_split(train_data_idx, n_repeats)
+
+    test_scores = []    
+    for i in trange(n_repeats):        
+        # Get train and test indices
+        test_idx = test_folds[i]
+        train_idx = np.random.choice(np.setdiff1d(train_data_idx, test_idx),
+                                     replace=False, size=int(train_data_idx.size * train_pct))
+
+        # Train model
+        model.fit(X[train_idx], y[train_idx])
+
+        # Compute test error
+        test_scores.append(model.score(X[test_idx], y[test_idx]))
+        
+    return np.asarray(test_scores)
+
+# convert back and forth between radians and centimeters
+def rad_to_cm(y_rad, track_len=400):
+    return ((y_rad + np.pi) / (2 * np.pi)) * track_len
+
+def cm_to_rad(y_cm):
+    return (y_cm / np.max(y_cm)) * 2 * np.pi - np.pi    
 
 '''
 Single Cell Analyses:
