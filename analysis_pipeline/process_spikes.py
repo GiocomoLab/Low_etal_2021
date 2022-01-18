@@ -664,6 +664,7 @@ def find_interneurons(fr_thresh=15, **kwargs):
 def find_spatially_stable(Y, stability_thresh=0.25):
     '''
     finds cells that are spatially stable.
+    (spatial firing pattern is similar from trial to trial)
 
     Params:
     ------
@@ -714,7 +715,7 @@ def find_grid_border(FR_manip, FR_normal, stable_idx, \
     # identify putative grid and border cells
     grid_idx = (corr_gain_manip < grid_thresh) & stable_idx
     border_idx = (corr_gain_manip > border_thresh) & stable_idx
-    return grid_idx, border_idx, corr_gain_manip
+    return grid_idx.astype(bool), border_idx.astype(bool), corr_gain_manip
 
 
 '''

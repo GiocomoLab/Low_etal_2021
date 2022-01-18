@@ -331,7 +331,7 @@ for i, c in enumerate(cell_colors):
 cell_colors[2] = 'xkcd:gold'
 
 def plot_fig4a(data, mouse, session, cell_IDs, \
-                FR_naive, FR_0, FR_1, \
+                binned_pos, FR_naive, FR_0, FR_1, \
                 FR_sem, FR_0_sem, FR_1_sem):
     '''
     Examples of remapping cells.
@@ -340,6 +340,9 @@ def plot_fig4a(data, mouse, session, cell_IDs, \
     ------
     cell_IDs : ndarray
         ID numbers for the example cells.
+    binned_pos : ndarray
+        position bin centers for each firing rate measurement
+        shape (n_pos_bins,)
     FR_naive, FR_0, FR_1 : ndarray
         firing rate by position across maps or within each map
         shape (n_pos_bins, n_cells)
@@ -701,6 +704,31 @@ for i, c in enumerate(cell_colors):
 GC_COLOR = cell_colors[0]
 BD_COLOR = cell_colors[1]
 
+def plot_fig5b(n_grid, n_border, n_spatial, n_total_cells, label_plot=False):
+    '''
+    plot the proportion of grid, border, non-grid/non-border spatial cells, 
+    and non-spatial cells across all gain manipulation sessions
+    '''
+    # set figure params
+    f, ax = plt.subplots(1, 1, figsize=(0.9, 1))
+    pie_colors = [cell_colors[0], cell_colors[1], 'k', 'w']
+    labels = ['grid', 'border', 'other spatial', 'other']
+    
+    pcts = np.asarray([n_grid, n_border, n_spatial, n_total_cells]) / n_total_cells * 100
+    if label_plot:
+        p = ax.pie(pcts, labels=labels, autopct='%1.1f%%', 
+                    colors = pie_colors,
+                    wedgeprops=dict(linewidth=0.5, edgecolor='k'))
+    else:   
+        p = ax.pie(pcts, labels=None, 
+                    colors = pie_colors,
+                    wedgeprops=dict(linewidth=0.5, edgecolor='k'))
+    for i in range(3):
+        p[0][i].set_alpha(0.8)
+
+    return f, ax
+
+
 def plot_fig5cd(data, mouse, session, cell_IDs, \
                 FR_0, FR_1, FR_0_sem, FR_1_sem, binned_pos):
     '''
@@ -717,7 +745,7 @@ def plot_fig5cd(data, mouse, session, cell_IDs, \
     FR_0_sem, FR_1_sem : ndarray
         SEM for the firing rate arrays; shape (n_pos_bins, n_cells)
     binned_pos : ndarray
-        position bin centers for the firing rate arrays; shape (n_pos_bins)
+        position bin centers for the firing rate arrays; shape (n_pos_bins,)
     '''
     # get data
     d = data[mouse][session] 
@@ -787,6 +815,226 @@ def plot_fig5cd(data, mouse, session, cell_IDs, \
             ax1.set_xlabel('position (cm)', fontsize=9, labelpad=1)
         elif i == 3:
             ax1.set_xlabel('position (cm)', fontsize=9, labelpad=1, horizontalalignment='left', x=0.5)
+
+    return f, gs
+
+def plot_fig5e(pct_dFR, all_angles, all_grid, all_border, nongc_nonbd_stable):
+    '''
+    plot the change in firing rate and spatial dissimilarity across maps
+    for grid, border, and non-grid/non-border spatial cells
+
+    Params
+    ------
+    pct_dFR : ndarray
+        percent change in firing rate across maps; shape (n_total_cells,)
+    all_angles : ndarray
+        spatial similarity across maps; shape (n_total_cells,)
+    all_grid : ndarray
+        indices for grid cells across all sessions; shape (n_total_cells,)
+    all_border : ndarray
+        indices for border cells across all sessions; shape (n_total_cells,)
+    nongc_nonbd_stable : ndarray
+        indices for other spatial cells across all sessions; shape (n_total_cells,)
+    '''
+    # get the data for each cell type
+    dFR_gc = pct_dFR[all_grid]
+    dFR_bd = pct_dFR[all_border]
+    dFR_sp = pct_dFR[nongc_nonbd_stable]
+
+    angle_gc = 1 - all_angles[all_grid]
+    angle_bd = 1- all_angles[all_border]
+    angle_sp = 1- all_angles[nongc_nonbd_stable]
+
+    n_gc = dFR_gc.shape[0]
+    n_bd = dFR_bd.shape[0]
+    n_sp = dFR_sp.shape[0]
+
+    # plotting params
+    gs = gridspec.GridSpec(1, 2, wspace=0.9)
+    f = plt.figure(figsize=(2.2, 1.2))
+    PLOT_COLORS = [GC_COLOR, BD_COLOR, 'k']
+    PT_SIZE = 5
+    PT_LW = 0
+    BAR_SIZE = 4
+    BAR_WIDTH = 0.8
+    LW_PCT = 0.6
+    SIG_SIZE = 5
+    LW_SIG = 0.8
+    POSITIONS = np.asarray([1, 3, 5])
+
+    # set jitter
+    JIT = 0.15
+    j_gc = np.random.randn(n_gc) * JIT
+    j_bd = np.random.randn(n_bd) * JIT
+    j_sp = np.random.randn(n_sp) * JIT
+
+    # CHANGE IN FIRING RATE
+    ax0 = plt.subplot(gs[0])
+    ax0.scatter(np.full(n_gc, POSITIONS[0])+j_gc, dFR_gc, s=PT_SIZE, lw=PT_LW, 
+                color=GC_COLOR, alpha=0.3, zorder=1)
+    ax0.scatter(np.full(n_bd, POSITIONS[1])+j_bd, dFR_bd, s=PT_SIZE, lw=PT_LW, 
+                color=BD_COLOR, alpha=0.3, zorder=1)
+    ax0.scatter(np.full(n_sp, POSITIONS[2])+j_sp, dFR_sp, s=PT_SIZE, lw=PT_LW, 
+                color='k', alpha=0.3, zorder=1)
+
+    # mark median and 95th percentiles
+    dFR_medians = np.asarray([np.median(dFR_gc), np.median(dFR_bd), np.median(dFR_sp)])
+    dFR_5 = np.asarray([np.percentile(dFR_gc, 5), np.percentile(dFR_bd, 5), np.percentile(dFR_sp, 5)])
+    dFR_95 = np.asarray([np.percentile(dFR_gc, 95), np.percentile(dFR_bd, 95), np.percentile(dFR_sp, 95)])
+    ax0.plot(POSITIONS[:-1], dFR_medians[:-1], '_k', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=2, alpha=0.7)
+    ax0.plot(POSITIONS[-1], dFR_medians[-1], '_w', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=2, alpha=0.7)
+    ax0.vlines(POSITIONS, dFR_5, dFR_95, lw=LW_PCT, colors=['k', 'k', 'w'], linestyles='solid', zorder=2, alpha=0.7)
+
+    # mark significance
+    xvals = np.asarray([POSITIONS[1]-0.3, POSITIONS[1], POSITIONS[1]+0.3, np.mean(POSITIONS[:-1])])
+    yvals = np.append(np.full(3, 198), [178])
+    ax0.hlines([170, 190], [POSITIONS[0], POSITIONS[0]], POSITIONS[1:], 
+                colors='k', linestyles='solid', lw=LW_SIG)
+    ax0.scatter(xvals, yvals, c='k', marker='*', lw=0, s=SIG_SIZE)
+
+    # set axis params
+    ax0.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax0.set_xticks(POSITIONS)
+    ax0.set_xticklabels(['grid', 'border', 'spatial'], rotation=90)
+    ax0.set_xlim(POSITIONS[0] - 1, POSITIONS[2] + 1)
+    ax0.set_yticks(np.arange(0, 210, 100))
+    ax0.set_yticklabels([0, 1, 2])
+    ax0.set_ylabel('fold change in FR', fontsize=9, labelpad=1)
+
+    # CHANGE IN SPATIAL CODING
+    ax1 = plt.subplot(gs[1])
+    ax1.scatter(np.full(n_gc, POSITIONS[0])+j_gc, angle_gc, s=PT_SIZE, lw=PT_LW, color=GC_COLOR, alpha=0.3, zorder=1)
+    ax1.scatter(np.full(n_bd, POSITIONS[1])+j_bd, angle_bd, s=PT_SIZE, lw=PT_LW, color=BD_COLOR, alpha=0.3, zorder=1)
+    ax1.scatter(np.full(n_sp, POSITIONS[2])+j_sp, angle_sp, s=PT_SIZE, lw=PT_LW, color='k', alpha=0.3, zorder=1)
+
+    # mark median and 95th percentiles
+    angle_medians = np.asarray([np.median(angle_gc), np.median(angle_bd), np.median(angle_sp)])
+    angle_5 = np.asarray([np.percentile(angle_gc, 5), np.percentile(angle_bd, 5), np.percentile(angle_sp, 5)])
+    angle_95 = np.asarray([np.percentile(angle_gc, 95), np.percentile(angle_bd, 95), np.percentile(angle_sp, 95)])
+    ax1.plot(POSITIONS[:-1], angle_medians[:-1], '_k', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=2, alpha=0.7)
+    ax1.plot(POSITIONS[-1], angle_medians[-1], '_w', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=2, alpha=0.7)
+    ax1.vlines(POSITIONS, angle_5, angle_95, lw=LW_PCT, colors=['k', 'k', 'w'], linestyles='solid', zorder=2, alpha=0.7)
+
+    # mark significance
+    xvals = np.asarray([POSITIONS[1]-0.3, POSITIONS[1], POSITIONS[1]+0.3, 
+                        np.mean(POSITIONS[:-1])-0.3, np.mean(POSITIONS[:-1]), np.mean(POSITIONS[:-1])+0.3])
+    yvals = np.append(np.full(3, 0.83), np.full(3, 0.73))
+    ax1.hlines([0.7, 0.8], [POSITIONS[0], POSITIONS[0]], POSITIONS[1:], 
+                colors='k', linestyles='solid', lw=LW_SIG)
+    ax1.scatter(xvals, yvals, c='k', marker='*', lw=0, s=SIG_SIZE)
+
+    # set axis params
+    ax1.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax1.set_xticks(POSITIONS)
+    ax1.set_xticklabels(['grid', 'border', 'spatial'], rotation=90)
+    ax1.set_xlim(POSITIONS[0] - 1, POSITIONS[2] + 1)
+    ax1.set_yticks([0, 0.3, 0.6])
+    ax1.set_yticklabels([0, 0.3, 0.6])
+    ax1.set_ylabel('spatial dissimilarity', fontsize=9, labelpad=1)
+
+    return f, gs
+
+def plot_fig5fg(data, mouse, session, cell_IDs, \
+                binned_pos, FR_naive, FR_0, FR_1, \
+                FR_sem, FR_0_sem, FR_1_sem):
+    '''
+    Examples of remapping cells.
+
+    Params:
+    ------
+    cell_IDs : ndarray
+        ID numbers for the example cells.
+    binned_pos : ndarray
+        position bin centers for each firing rate measurement
+        shape (n_pos_bins,)
+    FR_naive, FR_0, FR_1 : ndarray
+        firing rate by position across maps or within each map
+        shape (n_pos_bins, n_cells)
+    FR_sem, FR_0_sem, FR_1_sem : ndarray
+        SEM for the firing rate arrays; shape (n_pos_bins, n_cells)
+    '''
+    # get data
+    d = data[mouse][session] 
+    A = d['A']
+    B = d['B']  
+    cells = d['cells']
+    W = d['kmeans']['W']
+    map0_idx = d['idx']
+    map1_idx = ~map0_idx
+
+    # figure params
+    gs = gridspec.GridSpec(5, 5, hspace=0.5, wspace=0.6)
+    f = plt.figure(figsize=(4.8, 2)) 
+    PT_SIZE = 1
+    LW_MEAN = 1
+    LW_SEM = 0.3
+
+    for i, cell_ID in enumerate(cell_IDs):
+        # set axes
+        ax0 = plt.subplot(gs[:3, i])
+        ax1 = plt.subplot(gs[3:4, i])
+        ax2 = plt.subplot(gs[4:, i])
+        
+        # set color
+        if i >= 3:
+            cell_color = cell_colors[1]
+        else:
+            cell_color = cell_colors[0]
+        
+        # draw raster
+        sdx = B[map0_idx, np.where(cells==cell_ID)[0][0]].astype(bool)
+        ax0.scatter(A[map0_idx, 0][sdx], A[map0_idx, 2][sdx], 
+                    color=cell_color, lw=0, s=PT_SIZE, alpha=.1)
+        sdx = B[map1_idx, np.where(cells==cell_ID)[0][0]].astype(bool)
+        ax0.scatter(A[map1_idx, 0][sdx], A[map1_idx, 2][sdx], 
+                    color='k', lw=0, s=PT_SIZE, alpha=.1)
+        
+        # plot tuning curves with SEM
+        sdx = (np.where(cells==cell_ID)[0][0]).astype(int)
+        ax1.plot(FR_0[:, sdx], color=cell_color, lw=LW_MEAN, alpha=1)
+        ax1.fill_between(binned_pos/2, FR_0[:, sdx] + FR_0_sem[:, sdx], 
+                         FR_0[:, sdx] - FR_0_sem[:, sdx],
+                         color=cell_color, linewidth=LW_SEM, alpha=0.2)
+        ax1.plot(FR_1[:, sdx], color='k', lw=LW_MEAN, alpha=1)
+        ax1.fill_between(binned_pos/2, FR_1[:, sdx] + FR_1_sem[:, sdx], 
+                         FR_1[:, sdx] - FR_1_sem[:, sdx],
+                         color='k', linewidth=LW_SEM, alpha=0.2)    
+        
+        # plot naive tuning curve with SEM
+        sdx = (np.where(cells==cell_ID)[0][0]).astype(int)
+        ax2.plot(FR_naive[:, sdx], 'k', lw=LW_MEAN, alpha=0.5)
+        ax2.fill_between(binned_pos/2, FR_naive[:, sdx] + FR_sem[:, sdx], FR_naive[:, sdx] - FR_sem[:, sdx],
+                         color='k', linewidth=LW_SEM, alpha=0.1)
+
+        # format axes
+        ax0.set_xlim((0, 400))
+        ax0.set_xticks(np.arange(0, 425, 200))
+        ax0.tick_params(labelbottom=False)
+        ylim_ax = [0, np.max(A[:, 2])]
+        ax0.set_ylim(ylim_ax[::-1])
+        ax0.set_yticks(np.arange(0, 350, 100))
+        ax0.set_title("cell {}".format(cell_ID), fontsize=10, pad=3)
+         
+        if i == 0:
+            ax0.set_ylabel('trial number', fontsize=9, labelpad=1)
+            ax2.set_ylabel('FR (Hz)', horizontalalignment='left', fontsize=9, labelpad=5)
+            
+        ax1.set_xlim([0, 200])
+        ax1_lims = ax1.get_ylim()
+        ax1.set_xticks(np.arange(0, 225, 100))
+        ax1.tick_params(labelbottom=False)
+        ax2.set_xlim([0, 200])
+        ax2.set_ylim(ax1_lims)
+        ax2.set_xticks(np.arange(0, 225, 100))
+        ax2.set_xticklabels(np.arange(0, 450, 200))
+        ax0.tick_params(which='major', labelsize=7.5, pad=0.5)
+        ax1.tick_params(which='major', labelsize=7.5, pad=0.5)
+        ax2.tick_params(which='major', labelsize=7.5, pad=0.5)
+
+        if i == 1:
+            ax2.set_xlabel('position (cm)', fontsize=9, labelpad=1)
+        elif i == 3:
+            ax2.set_xlabel('position (cm)', fontsize=9, labelpad=1, horizontalalignment='left', x=0.5)
 
     return f, gs
 
