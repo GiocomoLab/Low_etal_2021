@@ -95,9 +95,13 @@ def similarity(Y):
     return sim
 
 
-def get_remap_idx(W, MIN_TRIALS=5):
+def get_remap_idx(W, MIN_TRIALS=5, return_stable=False):
     '''
     Get the index for each trial preceding a remap event
+    
+    Also finds "stable blocks" (returns if return_stable=True)
+    - stable blocks must be at least TRIAL_MIN long
+    - stable blocks exclude the 4 trials surrounding each remap
 
     Params:
     ------
@@ -107,27 +111,39 @@ def get_remap_idx(W, MIN_TRIALS=5):
     MIN_TRIALS : int, odd
         minimum number of trials that activity must reside in a map before the next remap event
         prevents over-counting if activity bounces back and forth before settling
+
+    Returns:
+    -------
+    remap_idx : ndarray
+        trial numbers for trials directly preceding each remap event
+    stable_blocks : ndarray
+        trial numbers for stable trials between remap events
     '''
     trials = np.arange(0, W.shape[0]-1)
-    near_N = MIN_TRIALS//2
 
     # find all remaps
     remap_idx = np.where(np.abs(np.diff(W[:, 0])))[0]
 
-    # find stable periods meeting trial min
+    # define the trials abutting each remap (excluded from each stable block)
+    near_N = MIN_TRIALS//2
     for i in range(near_N):
         if i == 0:
             near_remaps = np.append(remap_idx, remap_idx+(i+1))
         elif i < near_N:
             near_remaps = np.append(np.append(near_remaps, remap_idx-i), remap_idx+(i+1))
     near_remaps = np.sort(near_remaps)
-    stable_idx = np.setdiff1d(trials, near_remaps)
 
-    # keep only remaps at least 5 trials from last remap
+    # find stable periods meeting trial min
+    stable_blocks = np.setdiff1d(trials, near_remaps)
+
+    # keep only remaps at least MIN_TRIALS from last remap
     boundary_trials = np.insert(remap_idx, 0, 0)
     remap_idx = np.setdiff1d(remap_idx, remap_idx[np.diff(boundary_trials) < MIN_TRIALS])
 
-    return remap_idx
+    if return_stable:
+        return remap_idx, stable_blocks
+    else:
+        return remap_idx
 
 
 def map_idx_by_obs(A, W):
@@ -257,6 +273,7 @@ normpdf = scipy.stats.norm.pdf
 from scipy.linalg import cho_factor, cho_solve
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_random_state
+
 
 class CircularRegression(BaseEstimator):
     """
@@ -450,20 +467,104 @@ def crossvalidate_blocks(model, X, y, train_data_idx, test_data_idx, n_repeats=1
     '''
     test_folds = np.array_split(test_data_idx, n_repeats)
 
-    test_scores = []    
+    test_scores = np.asarray([])    
     for i in trange(n_repeats):        
         # Get train and test indices
         test_idx = test_folds[i]
-        train_idx = np.random.choice(np.setdiff1d(train_data_idx, test_idx),
+        train_idx = np.random.choice(np.setdiff1d(train_data_idx, test_idx), \
                                      replace=False, size=int(train_data_idx.size * train_pct))
 
         # Train model
         model.fit(X[train_idx], y[train_idx])
 
         # Compute test error
-        test_scores.append(model.score(X[test_idx], y[test_idx]))
+        test_scores = np.append(test_scores, \
+                                model.score(X[test_idx], y[test_idx]))
         
-    return np.asarray(test_scores)
+    return test_scores
+
+def shuffle_scores(X, y, ds_idx, \
+                    N_REPEATS=100, MAX_CELL_SHIFT=10, MAX_POS_SHIFT=np.pi/2, \
+                    same_map=False):
+    '''
+    Params:
+    ------
+    X : ndarray
+        firing rate for each cell; shape (n_obs, n_cells)
+    y : ndarray
+        variable to predict; shape (n_obs,)
+    ds_idx : ndarray
+        downsampled indices for each map; shape (n_maps, n_obs_ds)
+    N_REPEATS : int
+        number of shuffles; optional, default is 100
+    MAX_CELL_SHIFT : int
+        maximum amount to shift the cell labels; optional, default is 10
+    MAX_POS_SHIFT : int
+        maximum amount to shift the position values; optional, default is pi/2 radians (200cm)
+    same_map : bool
+        if True, tests on a shuffled version of the training map
+        if False, tests on a shuffled version of the other map
+        default is False
+
+    Returns:
+    -------
+    10-fold crossvalidated scores for each shuffle control; shape (N_REPEATS, 10)
+    train1_test0_scores : ndarray
+        scores for a model trained on map 1, tested on shuffled map 0
+    train0_test1_scores : ndarray
+        scores for a model trained on map 0, tested on shuffled map 1    
+    '''
+
+    # get downsampled indices for each map
+    ds_0 = ds_idx[0]
+    ds_1 = ds_idx[1]
+    
+    # to shuffle the neuron labels
+    X0 = X[ds_0].copy()
+    X1 = X[ds_1].copy()
+    cell_shifts = (np.random.randn(N_REPEATS, 1)*MAX_CELL_SHIFT).astype(int)
+
+    # to shuffle the position labels
+    y0 = y[ds_0].copy()
+    y1 = y[ds_1].copy()
+    pos_shifts = (np.random.randn(N_REPEATS, 1)*MAX_POS_SHIFT).astype(int)
+    
+    # compute the shuffled scores
+    test0_scores = np.zeros((N_REPEATS, 10))
+    test1_scores = np.zeros((N_REPEATS, 10))
+    for j in trange(N_REPEATS):
+        shuff_X0 = X.copy()
+        shuff_X1 = X.copy()
+        shuff_y0 = y.copy()
+        shuff_y1 = y.copy()
+        
+        # compute the scores for shuffled map 0
+        shuff_X0[ds_0] = np.roll(X0, cell_shifts[j], axis=1) # permute neuron identities
+        shuff_y0[ds_0] = y0 + pos_shifts[j] # shift position labels
+        model = CircularRegression(alpha=1e-4)
+        if same_map:
+            # arrange so that test index indexes into the shuffled version of the map
+            combined_X0 = np.row_stack((X0, shuff_X0))
+            combined_y0 = np.append(y0, shuff_y0)
+            ds_0_shuff = ds_0.copy() + X0.shape[0]
+            test0_scores[j] = crossvalidate_blocks(model, combined_X0, combined_y0, ds_0, ds_0_shuff)
+        else:
+            test0_scores[j] = crossvalidate_blocks(model, shuff_X0, shuff_y0, ds_1, ds_0)
+        
+        # compute the scores for shuffled map 1
+        shuff_X1[ds_1] = np.roll(X1, cell_shifts[j], axis=1) # permute neuron identities
+        shuff_y1[ds_1] = y1 + pos_shifts[j] # shift position labels
+        model = CircularRegression(alpha=1e-4)
+        if same_map:
+            # arrange so that test index indexes into the shuffled version of the map
+            combined_X1 = np.row_stack((X1, shuff_X1))
+            combined_y1 = np.append(y1, shuff_y1)
+            ds_1_shuff = ds_1.copy() + X1.shape[0]
+            test1_scores[j] = crossvalidate_blocks(model, combined_X1, combined_y1, ds_1, ds_1_shuff)
+        else:
+            test1_scores[j] = crossvalidate_blocks(model, shuff_X1, shuff_y1, ds_0, ds_1)
+
+    return test0_scores, test1_scores
 
 # convert back and forth between radians and centimeters
 def rad_to_cm(y_rad, track_len=400):
@@ -829,6 +930,55 @@ def clu_distance_cells(Y, H, map_idx, W):
 
     return dd_by_cells, ll_cells
 
+def clu_distance_pos(Y, H, map_idx, W):
+    '''
+    Calculate the distance to k-means cluster for each position bin on each trial.
+    This is a measure of moment-to-moment variability used in Figures 8 and S8.
+
+    Params:
+    ------
+    Y : ndarray
+        normalized firing rate by 5cm position bins by trial for each cell
+        shape (n_trials, n_pos_bins, n_cells)
+    H : ndarray
+        k-means tuning curve estimates for each cluster/map
+        shape (n_maps, n_cell*n_pos_bins)
+    map_idx : int
+        index for map 1
+    W : ndarray
+        k-means cluster label for each trial; shape (n_trials, n_maps)
+
+    Returns:
+    -------
+    pos_dist : ndarray
+        distance to cluster for each position bin on each trial; shape (n_pos_bins, n_trials)
+        1 = in map 1 centroid
+        -1 = in map 2 centroid
+        0 = exactly between the two maps
+    '''
+    # reshape and store dimensions
+    Y = Y.transpose(0, 2, 1)
+    n_trials, n_cells, n_pos = Y.shape
+    N = H.shape[0]
+    H_tens = H.reshape((N, n_cells, n_pos))
+
+    # get each cluster
+    c1 = H_tens[map_idx, :, :]
+    c2 = H_tens[map_idx-1, :, :]
+    
+    # find the unit vector pointing between c1 and c2 in state space
+    proj = (c1 - c2) / np.linalg.norm(c1 - c2, axis=0, keepdims=True)
+
+    # project everything onto the same line
+    projc1 = np.sum(c1 * proj, axis=0)[None, :]
+    projc2 = np.sum(c2 * proj, axis=0)[None, :]
+    projY = np.sum(Y * proj[None, :, :], axis=1)
+
+    # caculate the distance to cluster for each position bin
+    dd_by_pos = (projY - projc2) / (projc1 - projc2)
+    
+    # pos_dist: 1 for in map 1 and -1 for in map 2
+    return 2 * (dd_by_pos - .5)
 
 '''
 Histology Functions:

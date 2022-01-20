@@ -689,8 +689,6 @@ def plot_fig4f(data, mice, sessions):
     return f, ax
 
 
-
-
 ''' FIGURE 5 '''
 ''' set colors for each cell type
 orange = putative grid cells
@@ -1039,7 +1037,336 @@ def plot_fig5fg(data, mouse, session, cell_IDs, \
     return f, gs
 
 ''' FIGURE 6 '''
+def plot_fig6d(avg_scores, avg_shuffle, N_sessions, session_colors):
+    N_sessions = avg_scores.shape[0]
+
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
+    DOT_SIZE = 10
+    DOT_LW = 0.5
+    BAR_SIZE = 7
+    BAR_WIDTH = 2
+    j = np.random.randn(avg_scores.shape[0]) * .08 # jitter
+
+    # get the average scores for each case
+    avg_0to0 = avg_scores[:, 0]
+    avg_1to1 = avg_scores[:, 2]
+    avg_rand = avg_scores[:, -1] # train/test both maps
+
+    # plot connector lines
+    for k, a0 in enumerate(avg_0to0): # plot connector lines
+        a1 = avg_1to1[k]
+        r = avg_rand[k]
+        sh = avg_shuffle[k]
+        x_vals = [1+j[k], 2+j[k], 3+j[k], 4+j[k]]
+        y_vals = [a0, a1, r, sh]
+        ax.plot(x_vals, y_vals, '-', color='xkcd:gray', lw=DOT_LW, zorder=1,  alpha=1)
+
+    # train on map 0, test on map 0
+    ax.scatter(np.full(N_sessions, 1)+j, avg_0to0,
+               facecolors=session_colors, edgecolors='k', 
+               s=DOT_SIZE, lw=DOT_LW, zorder=2, alpha=0.7)   
+    
+    # train on map 1, test on map 1
+    ax.scatter(np.full(N_sessions, 2)+j, avg_1to1,
+               facecolors=session_colors, edgecolors='k', 
+               s=DOT_SIZE, lw=DOT_LW, zorder=2, alpha=0.7)
+    
+    # train on all, test on all
+    ax.scatter(np.full(N_sessions, 3)+j, avg_rand,
+               facecolors=session_colors, edgecolors='k', 
+               s=DOT_SIZE, lw=DOT_LW, zorder=2, alpha=0.7)
+    
+    # shuffled "remap"
+    ax.scatter(np.full(N_sessions, 4)+j, avg_shuffle,
+               facecolors=session_colors, edgecolors='k', 
+               s=DOT_SIZE, lw=DOT_LW, zorder=2, alpha=0.7)
+
+    # plot means
+    ax.plot(1, np.mean(avg_0to0), '_', c='k', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=3)
+    ax.plot(2, np.mean(avg_1to1), '_', c='k', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=3)
+    ax.plot(3, np.mean(avg_rand), '_', c='k', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=3)
+    ax.plot(4, np.mean(avg_shuffle), '_', c='k', markersize=BAR_SIZE, markeredgewidth=BAR_WIDTH, zorder=3)
+
+    # labels and axes
+    labels = ['map 1', 'map 2', 'both', 'shuffle']
+    ax.set_xlim([0.5, 4.5])
+    ax.set_ylim([-0.1, 1.1])
+    ax.set_xticks([1, 2, 3, 4])
+    ax.set_yticks([0, 0.5, 1])
+    ax.set_yticklabels([0, 0.5, 1])
+    ax.set_xticklabels(labels, rotation=90)
+    ax.set_ylabel('avg model score', fontsize=9, labelpad=1)
+    ax.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax.set_title('train/test same', fontsize=10, pad=4)
+
+    return f, ax
+
+def plot_fig6efg(avg_scores, pct_75, pct_25, pct_best, session_colors):
+    '''
+    plot performance for models trained and tested on the same vs. different maps
+
+    inputs are the mean, 75th, and 25th percentiles for each train/test case
+        train/test on map 0/0, 0/1, 1/1, 1/0
+    pct_best : across map performance relative to shuffle (0%) and within map (100%)
+    '''
+    N_sessions = avg_scores.shape[0]
+
+    # figure params:
+    gs = gridspec.GridSpec(1, 15, wspace=10000)
+    f = plt.figure(figsize=(4.1, 1.2)) 
+    DOT_SIZE = 10
+    DOT_LW = 0.5
+    UNITY_WIDTH = 1.25
+    SEM_WIDTH = 0.8
+    j = np.random.randn(pct_best.shape[0]) * .08 # jitter
+
+    ax0 = plt.subplot(gs[:5])
+    ax1 = plt.subplot(gs[6:-4])
+    ax2 = plt.subplot(gs[-2:])
+
+    # get the average scores for each case
+    avg_0to0 = avg_scores[:, 0]
+    avg_0to1 = avg_scores[:, 1]
+    avg_1to1 = avg_scores[:, 2]
+    avg_1to0 = avg_scores[:, 3]
+
+    # plot 25th and 75th percentiles
+    ax0.plot([avg_0to1, avg_0to1], [pct_75[:, 0], pct_25[:, 0]], '-k', lw=SEM_WIDTH, alpha=0.2, zorder=1)
+    ax0.plot([pct_75[:, 1], pct_25[:, 1]], [avg_0to0, avg_0to0], '-k', lw=SEM_WIDTH, alpha=0.2, zorder=2)
+    ax1.plot([pct_75[:, 2], pct_25[:, 2]], [avg_1to0, avg_1to0], '-k', lw=SEM_WIDTH, alpha=0.2, zorder=1)
+    ax1.plot( [avg_1to1, avg_1to1], [pct_75[:, 3], pct_25[:, 3]], '-k', lw=SEM_WIDTH, alpha=0.2, zorder=2)
+
+    # train on map 0, test on map 0 vs. test on map 1
+    ax0.scatter(avg_0to1, avg_0to0,
+                facecolors=session_colors, edgecolors='k', 
+                s=DOT_SIZE, lw=DOT_LW, zorder=3, alpha=0.7)   
+    
+    # train on map 1, test on map 1 vs. test on map 0
+    ax1.scatter(avg_1to1, avg_1to0,
+                facecolors=session_colors, edgecolors='k', 
+                s=DOT_SIZE, lw=DOT_LW, zorder=3, alpha=0.7)
+    
+    # relative performance vs. shuffle
+    ax2.scatter(np.full(N_sessions, 1)+j, pct_best[:, 0]*100, 
+                facecolors=session_colors, edgecolors='k', 
+                s=DOT_SIZE, lw=DOT_LW, zorder=3, alpha=0.7)
+    ax2.scatter(np.full(N_sessions, 1)-j, pct_best[:, 1]*100, 
+                facecolors=session_colors, edgecolors='k', 
+                s=DOT_SIZE, lw=DOT_LW, zorder=3, alpha=0.7)
+
+    # plot unity lines + shuffle/best lines
+    ax0.plot([0, 1], [0, 1], '--k', lw=UNITY_WIDTH, alpha=1)
+    ax1.plot([0, 1], [0, 1], '--k', lw=UNITY_WIDTH, alpha=1)
+    xlims = ax2.get_xlim()
+    ax2.hlines([0, 100], xlims[0], xlims[1], linestyles='dotted', colors='k', lw=UNITY_WIDTH)
+
+    # label everything
+    ax0.set_title('train map 1', fontsize=10, pad=4)
+    ax0.set_ylabel('test map 1', fontsize=9, labelpad=1)
+    ax0.set_xlabel('test map 2', fontsize=9, labelpad=1)
+    ax0.set_ylim([-0.05, 1.05])
+    ax0.set_xlim([-0.05, 1.05])
+    ax0.set_xticks([0, 0.5, 1])
+    ax0.set_xticklabels([0, 0.5, 1])
+    ax0.set_yticks([0, 0.5, 1])
+    ax0.set_yticklabels([0, 0.5, 1])
+
+    ax1.set_title('train map 2', fontsize=10, pad=4)
+    ax1.set_ylabel('test map 1', fontsize=9, labelpad=1)
+    ax1.set_xlabel('test map 2', fontsize=9, labelpad=1)
+    ax1.set_ylim([-0.05, 1.05])
+    ax1.set_xlim([-0.05, 1.05])
+    ax1.set_xticks([0, 0.5, 1])
+    ax1.set_xticklabels([0, 0.5, 1])
+    ax1.set_yticks([0, 0.5, 1])
+    ax1.set_yticklabels([0, 0.5, 1])
+
+    ax2.set_xticks([1])
+    ax2.set_title('train/test\ndifferent', fontsize=10, pad=4)
+    ax2.set_ylabel('relative\nscore (%)', fontsize=9, labelpad=1)
+
+    ax0.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax1.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax2.tick_params(labelbottom=False, bottom=False, which='major', labelsize=7.5, pad=0.5)
+
+    return f, gs
 
 ''' FIGURE 7 '''
 
 ''' FIGURE 8 '''
+def plot_fig8a(stable_speeds, remap_speeds, mouse_ID):
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
+    UNITY_W = 1
+    PT_SIZE = 15
+    PT_LW = 0.5
+
+    # stable vs. remaps
+    ax.scatter(stable_speeds, remap_speeds, s=PT_SIZE, 
+               facecolors=cp_color, edgecolors='k', lw=PT_LW, alpha=0.7)
+
+    # plot unity
+    xlims = ax.get_xlim()
+    ylims = ax.get_ylim()
+    min_speed = np.min([xlims[0], ylims[0]])
+    max_speed = np.max([xlims[1], ylims[1]])
+    ax.plot([min_speed, max_speed], [min_speed, max_speed], 
+            '--k', lw=UNITY_W, alpha=1)
+
+    # labels etc
+    ax.set_xticks([25, 50])
+    ax.set_yticks([25, 50])
+    ax.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax.set_xlabel('stable block\nspeed (cm/s)', fontsize=9, labelpad=1)
+    ax.set_ylabel('remap trials\nspeed (cm/s)', fontsize=9, labelpad=1)
+    ax.set_title(f'mouse {mouse_ID}', fontsize=10, pad=3)
+
+    return f, ax
+
+def plot_fig8b(mice, sessions, \
+                med_speed_stable, med_speed_remap, \
+                sem_stable, sem_remaps, \
+                print_speeds=True):
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
+    DOT_SIZE = 15
+    PT_LW = 0.5
+    UNITY_WIDTH = 1
+    SEM_WIDTH = 1
+
+    i = -1
+    if print_speeds:
+        print('average speeds per session (0 indicates excluded sessions)')
+    for m, session in zip(mice, sessions):
+        i += 1
+        
+        # get data
+        avg_stable = med_speed_stable[i]
+        avg_remap = med_speed_remap[i]
+        sem_s = sem_stable[i]
+        sem_r = sem_remaps[i]
+
+        # if avg_stable > 0, session has enough remap events to be included
+        idx = avg_stable > 0
+        
+        # show data
+        if print_speeds:
+            print(f'{m} stable block speeds: {avg_stable}')
+            print(f'{m} remap trial speeds: {avg_remap}\n')
+        
+        # choose color for each mouse
+        if m in ['Pisa', 'Hanover', 'Calais']:
+            session_color = cp_color
+        else:
+            session_color = cr_color
+        
+        # plot mean and sem
+        ax.vlines(avg_stable[idx], avg_remap[idx] - sem_r[idx], avg_remap[idx] + sem_r[idx], 
+                  colors='k', lw=SEM_WIDTH, linestyles='solid', alpha=0.2, zorder=1)
+        ax.hlines(avg_remap[idx], avg_stable[idx] - sem_s[idx], avg_stable[idx] + sem_s[idx], 
+                  colors='k', lw=SEM_WIDTH, linestyles='solid', alpha=0.2, zorder=1)
+        ax.scatter(avg_stable[idx], avg_remap[idx], s=DOT_SIZE, 
+                   facecolors=session_color, edgecolors='k', lw=PT_LW, zorder=2)
+
+    # set ticks
+    ax.set_xticks([25, 50])
+    ax.set_yticks([25, 50])
+    ax.tick_params(which='major', labelsize=7.5, pad=0.5)
+    
+    # plot unity
+    xlims = ax.get_xlim()
+    ylims = ax.get_ylim()
+    min_speed = np.min([xlims[0], ylims[0]])
+    max_speed = np.max([xlims[1], ylims[1]])
+    plt.plot([min_speed, max_speed], [min_speed, max_speed], '--k', lw=UNITY_WIDTH, alpha=1)
+
+    # label plot
+    ax.set_xlabel('stable block\nspeed (cm/s)', fontsize=9, labelpad=1)
+    ax.set_ylabel('remap trials\nspeed (cm/s)', fontsize=9, labelpad=1)
+    ax.set_title('all 2-map mice', fontsize=10, pad=3)
+
+    return f, ax
+
+def plot_fig8c(mouse_ID, session, ex_blocks, \
+                stable_idx, speed_stable, pos_stable):
+    n_trials = speed_stable.shape[0]
+
+    # figure params
+    gs  = gridspec.GridSpec(15, 2, hspace=0, wspace=0.2)
+    f = plt.figure(figsize=(2.5, 3))
+    LW_SPEED = 1.5
+    MAX_SPEED = 90
+
+    # plot speed and distance to cluster for 8 stable trials
+    xvals = np.arange(0, 4*400, 5)                       
+    for r, i in enumerate(ex_blocks):
+        # set subplots
+        if r == 0:
+            ax01 = plt.subplot(gs[:2, :])
+            ax11 = plt.subplot(gs[2, :])
+            ax01.set_title(f'mouse {mouse_ID}, session {session}', \
+                           fontsize=10, pad=5)
+        else:
+            ax01 = plt.subplot(gs[-3:-1, :])
+            ax11 = plt.subplot(gs[-1, :])
+        
+        # get trial numbers
+        X_LABELS = []
+        j = -1
+        for t in range(12):
+            if np.isin(t, np.asarray([1, 3, 5, 7])):
+                X_LABELS.append(f'{stable_idx[i] + j}')
+                j += 1
+            else:
+                X_LABELS.append('')
+        
+        # plot running speed
+        ax01.plot(xvals, speed_stable[i], '-k', lw=LW_SPEED)
+        ax01.set_ylim([0, MAX_SPEED])
+        ax01.set_xticks(np.arange(0, 4*400+5, 200))
+        ax01.set_xlim([0, 4*400])
+        ax01.tick_params(labelbottom=False, which='major', labelsize=7.5, pad=0.5)
+
+        # plot distance to midpoint
+        ax11.imshow(pos_stable[None, i, :], clim=[-1, 1], aspect='auto', cmap='binary')
+        ax11.set_xticks(np.arange(0, 4*80+5, 40))
+        ax11.set_xticklabels(X_LABELS)
+        ax11.set_xlim([0, 4*80])
+        ax11.tick_params(labelleft=False, which='major', labelsize=7.5, pad=3)
+        ax11.tick_params(axis = "y", which = "both", left = False)
+        
+    # zoom in on an example trial from each block
+    xvals = np.arange(0, 400, 5)                       
+    for r, i in enumerate(to_plot):
+        if r == 0:
+            ax01 = plt.subplot(gs[5:8, 1])
+            ax11 = plt.subplot(gs[8:9, 1])
+            idx = slice(-80, None)
+            ax01.tick_params(labelleft=False)
+            ax11.set_xlabel('position (cm)', fontsize=9, labelpad=1, 
+                            horizontalalignment='right', x=0.5)             
+        else:
+            ax01 = plt.subplot(gs[5:8, 0])
+            ax11 = plt.subplot(gs[8:9, 0])
+            idx = slice(80)
+            ax01.set_ylabel('running speed (cm/s)', fontsize=9, labelpad=3, 
+                            verticalalignment='bottom', y=0.3)
+        
+        # plot running speed
+        ax01.plot(xvals, speed_stable[i, idx], '-k', lw=LW_SPEED)
+        ax01.set_ylim([0, MAX_SPEED])
+        ax01.set_yticks([0, 40, 80])
+        ax01.set_xticks(np.arange(0, 405, 200))
+        ax01.set_xlim([0, 400])
+        ax01.tick_params(labelbottom=False, which='major', labelsize=7.5, pad=0.5)
+
+        # plot dd_pos
+        ax11.imshow(pos_stable[None, i, idx], clim=[-1, 1], aspect='auto', cmap='binary')
+        ax11.set_xticks(np.arange(0, 80+5, 40))
+        ax11.set_xticklabels(np.arange(0, 405, 200))
+        ax11.set_xlim([0, 80])
+        ax11.tick_params(labelleft=False, which='major', labelsize=7.5, pad=0.5)
+        ax11.tick_params(axis="y", which ="both", left=False)
+
+        return f, gs
