@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+import helpers
 
 def draw_raster(cell_IDs, ax, posx, trials, Y, color='k', minimalist=False):
     '''
@@ -1196,6 +1197,16 @@ def plot_fig6efg(avg_scores, pct_75, pct_25, pct_best, session_colors):
 
 ''' FIGURE 8 '''
 def plot_fig8a(stable_speeds, remap_speeds, mouse_ID):
+    '''
+    plot average running speeds for each remap trial/stable block pair for an example session
+
+    Params:
+    ------
+    stable_speeds : ndarray
+        average running speed for each stable block; shape (n_remaps,)
+    remap_speeds : ndarray
+        average running speed for each pair of remap trials; shape (n_remaps,)
+    '''
     # figure params
     f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
     UNITY_W = 1
@@ -1228,6 +1239,23 @@ def plot_fig8b(mice, sessions, \
                 med_speed_stable, med_speed_remap, \
                 sem_stable, sem_remaps, \
                 print_speeds=True):
+    '''
+    plot the average running speeds across each remap trials/stable blocks for
+    2-map sessions with a minimum of 3 remap events
+
+    Params:
+    ------
+    med_speed_stable : ndarray
+        average running speed during stable blocks; shape (n_sessions,)
+    med_speed_remap : ndarray
+        average running speed during remap trials; shape (n_sessions,)
+    sem_stable, sem_remaps : ndarray
+        sem for the above
+    print_speeds : bool
+        if True, prints the stable/remap speeds for each mouse/session
+        (this value is 0 is the session was excluded)
+    '''
+
     # figure params
     f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
     DOT_SIZE = 15
@@ -1290,6 +1318,23 @@ def plot_fig8b(mice, sessions, \
 
 def plot_fig8c(mouse_ID, session, ex_blocks, \
                 stable_idx, speed_stable, pos_stable):
+    '''
+    plot the neural distance to cluster for each position bin for example trials
+    from two stable blocks in a given session
+
+    Params:
+    ------
+    ex_blocks : ndarray
+        which stable blocks to use
+    stable_idx : ndarray
+        trial numbers for stable trials between remap events
+    speed_stable : ndarray
+        running speed during 4 trials in the middle of each stable block
+        shape (n_stable_blocks, n_pos_bins)
+    pos_stable : ndarray
+        distance to cluster score during the same trials
+        shape (n_stable_blocks, n_pos_bins)
+    '''
     n_trials = speed_stable.shape[0]
 
     # figure params
@@ -1338,7 +1383,7 @@ def plot_fig8c(mouse_ID, session, ex_blocks, \
         
     # zoom in on an example trial from each block
     xvals = np.arange(0, 400, 5)                       
-    for r, i in enumerate(to_plot):
+    for r, i in enumerate(ex_blocks):
         if r == 0:
             ax01 = plt.subplot(gs[5:8, 1])
             ax11 = plt.subplot(gs[8:9, 1])
@@ -1347,6 +1392,7 @@ def plot_fig8c(mouse_ID, session, ex_blocks, \
             ax11.set_xlabel('position (cm)', fontsize=9, labelpad=1, 
                             horizontalalignment='right', x=0.5)             
         else:
+            print('got here')
             ax01 = plt.subplot(gs[5:8, 0])
             ax11 = plt.subplot(gs[8:9, 0])
             idx = slice(80)
@@ -1369,4 +1415,63 @@ def plot_fig8c(mouse_ID, session, ex_blocks, \
         ax11.tick_params(labelleft=False, which='major', labelsize=7.5, pad=0.5)
         ax11.tick_params(axis="y", which ="both", left=False)
 
-        return f, gs
+    return f, gs
+
+def plot_fig8d(scores_by_speed_mean, scores_by_speed_sem, \
+                speed_bins, binned_speed):
+    '''
+    Plot the normalized distance to the midpoint between manifolds
+    against the running speed for an example session
+
+    Params:
+    ------
+    scores_by_speed_mean/sem : ndarray
+        the mean and sem distance to the midpoint for each speed bin across sessions
+        1 = in the cluster centroid for either map, 0 = exactly between centroids
+        shape (n_speed_bins,)
+    '''
+    f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
+
+    xvals = helpers.moving_avg(np.append(speed_bins, np.max(binned_speed)), 2)
+    ax.plot(xvals, scores_by_speed_mean, 'k', linewidth=1)
+    ax.fill_between(xvals, scores_by_speed_mean + scores_by_speed_sem,
+                    scores_by_speed_mean - scores_by_speed_sem, color='k', linewidth=0.3, alpha=0.1)
+
+    ax.set_yticks([0.8, 1.0, 1.2])
+    ax.set_xticks([0, 20, 40, 60, 80])
+    ax.tick_params(which='major', labelsize=7.5, pad=0.5)
+
+    ax.set_xlabel('speed (cm/s)', fontsize=9, labelpad=1)
+    ax.set_ylabel('distance \nto midpoint', fontsize=9, labelpad=1)
+
+    return f, ax
+
+def plot_fig8e(scores_by_speed_mean, scores_by_speed_sem):
+    '''
+    Plot the normalized distance to the midpoint between manifolds
+    against the normalized running speed for all 2-map sessions
+
+    Params:
+    ------
+    scores_by_speed_mean/sem : ndarray
+        the mean and sem distance to the midpoint for each speed bin across sessions
+        1 = in the cluster centroid for either map, 0 = exactly between centroids
+        shape (n_speed_bins,)
+    '''
+    # figure params
+    f, ax = plt.subplots(1, 1, figsize=(1.2, 1.2))
+    xvals = np.arange(0.05, 0.95, 0.1) # center of each normalized speed bin
+
+    # plot data
+    ax.plot(xvals, scores_by_speed_mean, 'k', linewidth=1, zorder=1)
+    ax.fill_between(xvals, scores_by_speed_mean + scores_by_speed_sem,
+                    scores_by_speed_mean - scores_by_speed_sem, color='k', linewidth=0.2, alpha=0.1, zorder=2)
+
+    # label axes etc.
+    ax.set_yticks([0.9, 1.0])
+    ax.set_xticks([0, 0.4, 0.8])
+    ax.tick_params(which='major', labelsize=7.5, pad=0.5)
+    ax.set_xlabel('norm. speed', fontsize=9, labelpad=1)
+    ax.set_ylabel('distance\nto midpoint', fontsize=9, labelpad=1)
+
+    return f, ax
