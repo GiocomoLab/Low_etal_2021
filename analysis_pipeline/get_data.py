@@ -7,6 +7,7 @@ import scipy.io
 import h5py
 from pathlib import Path
 from tqdm import trange
+import helpers
 
 
 def open_files(data_folder, mouse, session):
@@ -226,23 +227,17 @@ def formatData(d, tbin=None, get_vid=True):
     return X, X_labels, Y
 
 """ Helper Functions """
-def nan_interp(y):
-    def find(x):
-        return x.nonzero()[0]
-    nans = np.isnan(y)
-    y[nans] = np.interp(find(nans), find(~nans), y[~nans])
-    return y
-
-
 def cleanup(a, trial):
     # z-score
+    new_a = helpers.zscore(a)
+
     z = a - np.mean(a)
     z /= z.std()
     idx = np.abs(z) > 2
     
     new_a = a.copy()
     new_a[idx] = np.nan
-    new_a = nan_interp(new_a)
+    new_a = helpers.nan_interp(new_a)
     
     # normalize within each trial
     for i in range(int(np.max(trial))):
@@ -253,7 +248,7 @@ def cleanup(a, trial):
         a_max = np.max(new_a[idx])
         new_a[idx] = (new_a[idx] - a_min) / (a_max - a_min)
     
-    return nan_interp(new_a)
+    return helpers.nan_interp(new_a)
 
 
 def getSpeed(posx, dt):
@@ -279,7 +274,7 @@ def getSpeed(posx, dt):
     # throw out extreme values and interpolate
     speed[speed > 150] = np.nan
     speed[speed < -5] = np.nan
-    speed = nan_interp(speed)
+    speed = helpers.nan_interp(speed)
 
     # smooth
     import scipy.ndimage.filters as filt

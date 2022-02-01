@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import stats
+import helpers
 
 def avg_speed(speed, trials):
     '''
@@ -147,7 +148,3 @@ def speed_by_pos_bin(speed, pos, trials):
 
 
 ''' helpers '''
-def moving_avg(a, n=3) :
-    ret = np.cumsum(a, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
