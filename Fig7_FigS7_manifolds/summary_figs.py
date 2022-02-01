@@ -207,6 +207,8 @@ def make_alignment_panel():
         rmse_2 = []
         for _ in range(100):
             Q = np.linalg.qr(np.random.randn(m1.shape[1], m1.shape[1]))[0]
+            # error corrected Feb. 2022, this line originally read:
+            # Q = np.linalg.qr(np.random.randn(m1.shape[1], m1.shape[1]))
             rmse_2.append(np.sqrt(np.mean((m1 @ Q - m2) ** 2)))
 
         rmse_shuff_mean.append(np.percentile(rmse_2, 2.5))
