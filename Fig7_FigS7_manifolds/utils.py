@@ -57,7 +57,7 @@ def load_mouse(mouse, env_id=None, mean_center=True):
     mousename = mouse.split("_")[0]
     if mousename in ("Seoul", "Degu", "Inchon", "Busan", "Ulsan"):
         if env_id is None:
-            raise ValueError("Must specifying env_id for two track mice.")
+            raise ValueError("Must specify env_id for two track mice.")
         else:
             return load_2track_mouse(mouse, env_id, mean_center=mean_center)
 
